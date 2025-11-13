@@ -1,0 +1,97 @@
+/.venv/
+/caddy_certs/
+__pycache__/
+*.pyc
+.vscode/
+.idea/
+*.log
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# Virtual environments
+.venv/
+env/
+venv/
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Database
+# Track only the demo DB; ignore other DB artifacts
+data/**
+!shop.db
+!data/shop.db
+*.db-journal
+
+# Alembic
+alembic/versions/*.pyc
+
+# Logs
+*.log
+
+# IDEs/editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db 
+caddy_certs/
+*.crt
+*.key
+
+# Environment variables
+#.env
+#.env.local
+#.env.production
+
+# Reference folder (separate repository)
+stl/
+maas-prod-stl/
+
+# Temporary files
+simple_test.py
+test_calculator_endpoints.py
+.cursor
+.cursor/

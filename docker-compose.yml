@@ -1,0 +1,69 @@
+# Development Docker Compose Configuration
+# This file is configured for local development by default
+# For production, use: docker-compose -f docker-compose.production.yml --env-file .env.production up
+# For development, use: docker-compose up (or docker-compose -f docker-compose.development.yml up)
+
+services:
+  backend:
+    image: backend
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+      args:
+        - LINUX_PROXY_URL=${LINUX_PROXY_URL}
+    container_name: backend
+    environment:
+      - CORS_ORIGINS=["*"]
+      - CORS_ALLOW_CREDENTIALS=true
+      - CORS_ALLOW_METHODS=["*"]
+      - CORS_ALLOW_HEADERS=["*"]
+      - LINUX_PROXY_URL=${LINUX_PROXY_URL}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - traefik-global-proxy
+    # labels:
+    #   # Enable Traefik
+    #   - "traefik.enable=true"
+    #   - "traefik.docker.network=traefik-global-proxy"
+
+    #   # Router configuration (update domain as needed)
+    #   - "traefik.http.routers.lk-api.rule=Host(`lk-api.maas.int.kronshtadt.ru`)" # && PathPrefix(`/backend-stl`)"
+    #   - "traefik.http.routers.lk-api.entrypoints=https"
+    #   - "traefik.http.routers.lk-api.tls=true"
+
+    #   # Service configuration
+    #   - "traefik.http.services.lk-api.loadbalancer.server.port=8000"
+    #   - "traefik.http.services.lk-api.loadbalancer.healthcheck.path=/health"
+    #   - "traefik.http.services.lk-api.loadbalancer.healthcheck.interval=30s"
+
+    #   # Security headers middleware
+    #   - "traefik.http.middlewares.lk-api-headers.headers.customresponseheaders.X-Frame-Options=DENY"
+    #   - "traefik.http.middlewares.lk-api-headers.headers.customresponseheaders.X-Content-Type-Options=nosniff"
+    #   - "traefik.http.middlewares.lk-api-headers.headers.customresponseheaders.X-XSS-Protection=1; mode=block"
+    #   - "traefik.http.middlewares.lk-api-headers.headers.customresponseheaders.Strict-Transport-Security=max-age=31536000; includeSubDomains"
+
+    #   # Apply middleware
+    #   - "traefik.http.routers.lk-api.middlewares=lk-api-headers"
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+
+networks:
+  traefik-global-proxy:
+    external: true
+
+volumes:
+  uploads:
+  logs:
+  data:
+
+# Environment-specific configurations:
+# - Development: docker-compose.development.yml + .env.development
+# - Production: docker-compose.production.yml + .env.production

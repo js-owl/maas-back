@@ -1,0 +1,27 @@
+services:
+  # Backend service - use local Dockerfile
+  # Runs on port 8001 to avoid conflicts with other services
+  backend:
+    image: shop-backend-local
+    build:
+      context: .
+      dockerfile: Dockerfile.local
+    container_name: backend
+    ports:
+      - "8001:8000"
+    environment:
+      - CORS_ORIGINS=["*"]
+      - CORS_ALLOW_CREDENTIALS=true
+      - CORS_ALLOW_METHODS=["*"]
+      - CORS_ALLOW_HEADERS=["*"]
+      - CALCULATOR_BASE_URL=http://backend-calc:7000
+    volumes:
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+    restart: unless-stopped
+    networks:
+      - maas-shared
+
+networks:
+  maas-shared:
+    external: true

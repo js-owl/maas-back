@@ -1,0 +1,110 @@
+# Build arguments for flexible registry configuration
+ARG PYTHON_IMAGE="vortex.kronshtadt.ru:8443/maas-proxy/python:3.11-slim"
+
+#---- Stage 1: Build and install dependencies ----
+FROM ${PYTHON_IMAGE} AS builder
+
+ARG APT_PROXY=""
+ARG PIP_INDEX_URL=""
+ARG PIP_TRUSTED_HOST=""
+
+# Set working directory
+WORKDIR /app
+
+# Configure apt proxy for private registry (if provided)
+RUN if [ -n "$APT_PROXY" ]; then \
+        echo "Acquire::http::Proxy \"$APT_PROXY\";" > /etc/apt/apt.conf.d/99proxy && \
+        echo "Acquire::https::Proxy \"$APT_PROXY\";" >> /etc/apt/apt.conf.d/99proxy; \
+    fi
+
+# Install build dependencies (with BuildKit APT cache mounts)
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y \
+    build-essential \
+    curl \
+    gettext-base \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy requirements file
+COPY requirements.txt .
+
+# Configure pip for private PyPI registry (if provided)
+RUN echo "PIP_INDEX_URL: ${PIP_INDEX_URL}" && \
+    echo "PIP_TRUSTED_HOST: ${PIP_TRUSTED_HOST}" && \
+    if [ -n "${PIP_INDEX_URL}" ] && [ "${PIP_INDEX_URL}" != "maasuser:@"* ]; then \
+        echo "Setting pip index URL: ${PIP_INDEX_URL}" && \
+        pip config set global.index-url "${PIP_INDEX_URL}"; \
+    else \
+        echo "Skipping pip index URL configuration - URL is empty or malformed"; \
+    fi
+RUN if [ -n "${PIP_TRUSTED_HOST}" ]; then \
+        echo "Setting pip trusted host: ${PIP_TRUSTED_HOST}" && \
+        pip config set global.trusted-host ${PIP_TRUSTED_HOST}; \
+    fi
+
+# Install Python dependencies with BuildKit cache mount for faster builds
+# Cache pip packages to speed up rebuilds
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install --no-cache-dir -r requirements.txt
+
+#---- Stage 2: Runtime image ----
+FROM ${PYTHON_IMAGE}
+
+ARG APT_PROXY=""
+ARG GIT_TAG=""
+ARG GIT_HASH=""
+ARG GIT_BRANCH=""
+
+# Set working directory
+WORKDIR /app
+
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
+
+# Set build metadata as environment variables
+ENV GIT_TAG=${GIT_TAG} \
+    GIT_HASH=${GIT_HASH} \
+    GIT_BRANCH=${GIT_BRANCH}
+
+# Configure apt proxy for private registry (if provided)
+RUN if [ -n "$APT_PROXY" ]; then \
+        echo "Acquire::http::Proxy \"$APT_PROXY\";" > /etc/apt/apt.conf.d/99proxy && \
+        echo "Acquire::https::Proxy \"$APT_PROXY\";" >> /etc/apt/apt.conf.d/99proxy; \
+    fi
+
+# Install only runtime dependencies (no build tools) with APT cache mounts
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
+    --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
+    apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy installed Python packages from builder stage
+COPY --from=builder /usr/local/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /usr/local/bin /usr/local/bin
+
+# Copy application code
+COPY . .
+
+# Create necessary directories
+RUN mkdir -p /app/uploads /app/logs /app/data
+
+# Create non-root user for security (commented out for initial testing)
+#RUN useradd --create-home --shell /bin/bash app && \
+#    chown -R app:app /app
+#USER app
+
+# Expose port
+EXPOSE 8000
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application
+CMD ["uvicorn", "backend.main:app", "--host", "0.0.0.0", "--port", "8000"]

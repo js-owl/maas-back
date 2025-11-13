@@ -1,0 +1,70 @@
+services:
+  backend:
+    image: ${NEXUS_PUSH_IMAGE:-vortex.kronshtadt.ru:8443/maas-hosted/maas-backend:dev-latest}
+    container_name: backend-dev
+    ports:
+      - "8000:8000"
+    environment:
+      - CORS_ORIGINS=["*"]
+      - CORS_ALLOW_CREDENTIALS=true
+      - CORS_ALLOW_METHODS=["*"]
+      - CORS_ALLOW_HEADERS=["*"]
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - maas-internal
+      - traefik-global-proxy
+    labels:
+      # Enable Traefik
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-global-proxy"
+
+      # Router configuration for development server
+      - "traefik.http.routers.lk-api-dev.rule=Host(`${TRAEFIK_HOST:-dcksv-maas-dev.int.kronshtadt.ru}`) && PathPrefix(`/api/v3/`)"
+      - "traefik.http.routers.lk-api-dev.entrypoints=https"
+      - "traefik.http.routers.lk-api-dev.tls=true"
+      - "traefik.http.routers.lk-api-dev.middlewares=strip-api-prefix@docker,cors@file"
+
+      - "traefik.http.middlewares.strip-api-prefix.stripprefix.prefixes=/api/v3/"
+
+      # Service configuration
+      - "traefik.http.services.lk-api-dev.loadbalancer.server.port=8000"
+      - "traefik.http.services.lk-api-dev.loadbalancer.healthcheck.path=/health"
+      - "traefik.http.services.lk-api-dev.loadbalancer.healthcheck.interval=30s"
+
+    volumes:
+      - ./.env:/app/.env
+      - ./data:/app/data
+      - ./uploads:/app/uploads
+      - ./logs:/app/logs
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G
+        reservations:
+          cpus: '1.0'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
+networks:
+  maas-internal:
+    external: true
+  traefik-global-proxy:
+    external: true
+
+volumes:
+  uploads:
+  logs:
+  data:
+  main:
+

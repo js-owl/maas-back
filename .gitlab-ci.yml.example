@@ -1,0 +1,110 @@
+# GitLab CI/CD Pipeline Example for Manufacturing Service Backend
+# Copy this to .gitlab-ci.yml and customize for your environment
+
+stages:
+  - test
+  - build
+  - deploy
+
+variables:
+  # Docker configuration
+  DOCKER_DRIVER: overlay2
+  DOCKER_TLS_CERTDIR: "/certs"
+  
+  # Application configuration
+  IMAGE_NAME: $CI_REGISTRY_IMAGE
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
+# Test stage - run tests before building
+test:
+  stage: test
+  image: python:3.11-slim
+  before_script:
+    - python -m venv venv
+    - source venv/bin/activate
+    - pip install -r requirements.txt
+  script:
+    - pytest tests/ -v --cov=backend --cov-report=xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+# Build stage - create Docker image
+build:
+  stage: build
+  image: docker:latest
+  services:
+    - docker:dind
+  before_script:
+    - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
+  script:
+    # Build with proxy if configured, without if not
+    - |
+      if [ -n "$LINUX_PROXY_URL" ]; then
+        echo "Building with proxy: $LINUX_PROXY_URL"
+        docker build --build-arg LINUX_PROXY_URL="$LINUX_PROXY_URL" -t $IMAGE_NAME:$IMAGE_TAG .
+      else
+        echo "Building without proxy (direct internet access)"
+        docker build --build-arg LINUX_PROXY_URL="" -t $IMAGE_NAME:$IMAGE_TAG .
+      fi
+    - docker push $IMAGE_NAME:$IMAGE_TAG
+    - docker tag $IMAGE_NAME:$IMAGE_TAG $IMAGE_NAME:latest
+    - docker push $IMAGE_NAME:latest
+  only:
+    - main
+    - develop
+
+# Deploy stage - deploy to different environments
+deploy_staging:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    ENVIRONMENT: staging
+  script:
+    - echo "Deploying to staging environment"
+    # Add your staging deployment commands here
+    # Example: kubectl apply -f k8s/staging/
+  environment:
+    name: staging
+    url: https://staging.maas.company.com
+  only:
+    - develop
+
+deploy_production:
+  stage: deploy
+  image: docker:latest
+  services:
+    - docker:dind
+  variables:
+    ENVIRONMENT: production
+  script:
+    - echo "Deploying to production environment"
+    # Add your production deployment commands here
+    # Example: kubectl apply -f k8s/production/
+  environment:
+    name: production
+    url: https://maas.company.com
+  when: manual
+  only:
+    - main
+
+# Security scanning (optional)
+security_scan:
+  stage: test
+  image: docker:latest
+  services:
+    - docker:dind
+  script:
+    - docker build -t $IMAGE_NAME:security-scan .
+    - docker run --rm -v /var/run/docker.sock:/var/run/docker.sock 
+      -v $(pwd):/workspace 
+      aquasec/trivy image --exit-code 0 --severity HIGH,CRITICAL $IMAGE_NAME:security-scan
+  allow_failure: true
+  only:
+    - main
+    - develop

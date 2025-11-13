@@ -1,0 +1,30 @@
+# Deploy tools image for GitLab CI/CD
+# Contains SSH client, Docker CLI, and other deployment utilities
+
+FROM alpine:3.18
+
+# Install deployment tools
+RUN apk add --no-cache \
+    openssh-client \
+    curl \
+    docker-cli \
+    bash \
+    git \
+    jq \
+    && rm -rf /var/cache/apk/*
+
+# Create deploy user
+RUN adduser -D -s /bin/bash deploy
+
+# Set working directory
+WORKDIR /app
+
+# Copy deployment scripts
+COPY scripts/deploy.sh /usr/local/bin/deploy.sh
+RUN chmod +x /usr/local/bin/deploy.sh
+
+# Switch to deploy user
+USER deploy
+
+# Default command
+CMD ["/bin/bash"]
