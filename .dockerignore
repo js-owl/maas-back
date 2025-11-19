@@ -1,0 +1,93 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+*.egg-info/
+dist/
+build/
+*.pyc
+*.pyo
+*.pyd
+
+# Data and logs
+data/
+logs/
+*.log
+*.db
+*.sqlite
+*.sqlite3
+
+# Uploads and user files
+uploads/
+new_demo_models/
+
+# Redis data
+redis-data/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Documentation
+*.md
+docs/
+CI-CD-README.md
+DEVELOPMENT.md
+FEATURES.md
+GITLAB_VARIABLES.md
+remote_server_issue_analysis.md
+
+# Test files
+tests/
+test_*.py
+*_test.py
+conftest.py
+pytest.ini
+
+# Scripts (unless needed in production)
+scripts/
+calculation_router.py
+change_pass.py
+free_port.py
+migrate_db.py
+test_order_to_bitrix.py
+
+# Other
+server.log
+debug.log
+debug_file.txt
+settings/
+maas-prod-stl/
+replace_demo_models.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.backup
+
+
+

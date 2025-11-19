@@ -54,20 +54,27 @@ async def process_sync_queue(
     db: AsyncSession = Depends(get_db),
     admin_user: models.User = Depends(require_admin)
 ):
-    """Manually trigger sync queue processing (admin only)"""
+    """Manually trigger sync queue processing (admin only) - DEPRECATED: Processing is now automatic via worker"""
     try:
-        stats = await bitrix_sync_service.process_sync_queue(db, limit)
-        logger.info(f"Sync processing completed by admin {admin_user.username}: {stats}")
+        # Note: Processing is now automatic via BitrixWorker consuming from Redis Streams
+        # This endpoint is kept for backward compatibility but does nothing
+        logger.info(f"Sync processing requested by admin {admin_user.username} (deprecated - processing is automatic)")
         return {
             "success": True,
-            "message": "Sync queue processing completed",
-            "stats": stats
+            "message": "Sync processing is now automatic via Redis Streams worker",
+            "note": "This endpoint is deprecated. Messages are processed automatically by the Bitrix worker.",
+            "stats": {
+                "processed": 0,
+                "failed": 0,
+                "completed": 0,
+                "note": "Use /sync/status to check queue status"
+            }
         }
     except Exception as e:
-        logger.error(f"Error processing sync queue: {e}")
+        logger.error(f"Error in deprecated sync process endpoint: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to process sync queue: {str(e)}"
+            detail=f"Error: {str(e)}"
         )
 
 
@@ -94,55 +101,40 @@ async def get_sync_status(
 
 @router.get('/sync/queue', tags=["Bitrix Sync"])
 async def get_sync_queue(
-    status_filter: str = None,
-    entity_type: str = None,
     limit: int = 50,
     db: AsyncSession = Depends(get_db),
     admin_user: models.User = Depends(require_admin)
 ):
-    """List sync queue items (admin only)"""
+    """Get Redis Stream queue information (admin only) - DEPRECATED: Use /sync/status instead"""
     try:
-        from sqlalchemy import select, and_
+        from backend.bitrix.queue_service import bitrix_queue_service
         
-        # Build query
-        query = select(models.BitrixSyncQueue)
-        conditions = []
-        
-        if status_filter:
-            conditions.append(models.BitrixSyncQueue.status == status_filter)
-        if entity_type:
-            conditions.append(models.BitrixSyncQueue.entity_type == entity_type)
-        
-        if conditions:
-            query = query.where(and_(*conditions))
-        
-        query = query.order_by(models.BitrixSyncQueue.created_at.desc()).limit(limit)
-        
-        result = await db.execute(query)
-        items = result.scalars().all()
-        
-        # Convert to dict format
-        queue_items = []
-        for item in items:
-            queue_items.append({
-                "id": item.id,
-                "entity_type": item.entity_type,
-                "entity_id": item.entity_id,
-                "operation": item.operation,
-                "status": item.status,
-                "attempts": item.attempts,
-                "last_attempt": item.last_attempt.isoformat() if item.last_attempt else None,
-                "error_message": item.error_message,
-                "created_at": item.created_at.isoformat(),
-                "updated_at": item.updated_at.isoformat()
-            })
+        # Get stream information
+        operations_info = await bitrix_queue_service.get_stream_info(
+            bitrix_queue_service.operations_stream
+        )
+        webhooks_info = await bitrix_queue_service.get_stream_info(
+            bitrix_queue_service.webhooks_stream
+        )
         
         return {
             "success": True,
-            "message": "Sync queue retrieved",
+            "message": "Queue information retrieved from Redis Streams",
+            "note": "This endpoint shows stream statistics. Use /sync/status for detailed information.",
             "data": {
-                "items": queue_items,
-                "total": len(queue_items)
+                "operations_stream": {
+                    "name": bitrix_queue_service.operations_stream,
+                    "length": operations_info.get("length", 0),
+                    "groups": operations_info.get("groups", 0),
+                    "last_id": operations_info.get("last_id", "0-0")
+                },
+                "webhooks_stream": {
+                    "name": bitrix_queue_service.webhooks_stream,
+                    "length": webhooks_info.get("length", 0),
+                    "groups": webhooks_info.get("groups", 0),
+                    "last_id": webhooks_info.get("last_id", "0-0")
+                },
+                "total_messages": operations_info.get("length", 0) + webhooks_info.get("length", 0)
             }
         }
         
@@ -188,38 +180,26 @@ async def verify_and_reconcile(
 
 @router.delete('/sync/queue/{item_id}', tags=["Bitrix Sync"])
 async def delete_sync_queue_item(
-    item_id: int,
-    db: AsyncSession = Depends(get_db),
+    item_id: str,
     admin_user: models.User = Depends(require_admin)
 ):
-    """Delete sync queue item (admin only)"""
+    """Delete message from Redis Stream (admin only) - DEPRECATED: Messages are auto-acknowledged by worker"""
     try:
-        from sqlalchemy import delete
+        from backend.bitrix.queue_service import bitrix_queue_service
         
-        result = await db.execute(
-            delete(models.BitrixSyncQueue).where(models.BitrixSyncQueue.id == item_id)
-        )
-        
-        if result.rowcount == 0:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Sync queue item not found"
-            )
-        
-        await db.commit()
-        
-        logger.info(f"Sync queue item {item_id} deleted by admin {admin_user.username}")
+        # Note: In Redis Streams, messages are automatically acknowledged when processed
+        # This endpoint is kept for backward compatibility but does nothing
+        logger.info(f"Delete queue item {item_id} requested by admin {admin_user.username} (deprecated)")
         
         return {
             "success": True,
-            "message": "Sync queue item deleted"
+            "message": "Message deletion is not supported in Redis Streams",
+            "note": "Messages are automatically acknowledged when processed by the worker. Use /sync/status to check queue status."
         }
         
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Error deleting sync queue item {item_id}: {e}")
+        logger.error(f"Error in deprecated delete endpoint: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Failed to delete sync queue item: {str(e)}"
+            detail=f"Error: {str(e)}"
         )

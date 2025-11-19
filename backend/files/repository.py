@@ -66,6 +66,7 @@ async def update_file_preview(db: AsyncSession, file_id: int, preview_data: dict
 
 async def get_file_preview_path(db: AsyncSession, file_id: int) -> Optional[str]:
     """Get preview image path for a file"""
+    print('===== repo get_file_preview_path', file_id)
     file_record = await get_file_by_id(db, file_id)
     if not file_record or not file_record.preview_generated:
         return None

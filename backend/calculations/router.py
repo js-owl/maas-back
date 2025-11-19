@@ -63,7 +63,6 @@ async def calculate_price(
     - length/width/height/thickness/dia: Manual dimensions (used if file_id not provided)
     - cover_id: Array of strings for multiple cover types (e.g., ["1", "2"])
     """
-    print('hi')
     # Log the service ID being used
     logger.info(f"Using service_id: {request_data.service_id}")
     

@@ -3,6 +3,60 @@ HTTP middleware for the application
 """
 from fastapi import Request
 from fastapi.responses import RedirectResponse
+from backend.utils.logging import get_logger
+import time
+
+logger = get_logger(__name__)
+
+
+async def request_logging_middleware(request: Request, call_next):
+    """Enhanced request logging middleware to capture full request details for debugging"""
+    start_time = time.time()
+    
+    # Log incoming request details
+    client_ip = request.client.host if request.client else "unknown"
+    method = request.method
+    path = str(request.url.path)
+    query_params = str(request.url.query) if request.url.query else ""
+    
+    # Capture all headers (sanitize sensitive ones)
+    headers_dict = dict(request.headers)
+    # Sanitize authorization header for logging
+    if "authorization" in headers_dict:
+        auth_header = headers_dict["authorization"]
+        if auth_header.startswith("Bearer "):
+            token_preview = auth_header[:20] + "..." if len(auth_header) > 20 else auth_header
+            headers_dict["authorization"] = token_preview
+    
+    # Log request details
+    logger.info(
+        f"INCOMING REQUEST - Method: {method}, Path: {path}, "
+        f"Query: {query_params}, Client IP: {client_ip}, "
+        f"Forwarded-Proto: {request.headers.get('X-Forwarded-Proto', 'N/A')}, "
+        f"Forwarded-Host: {request.headers.get('X-Forwarded-Host', 'N/A')}, "
+        f"User-Agent: {request.headers.get('User-Agent', 'N/A')}"
+    )
+    logger.debug(f"Request headers: {headers_dict}")
+    
+    try:
+        response = await call_next(request)
+        duration_ms = (time.time() - start_time) * 1000
+        
+        # Log response details
+        logger.info(
+            f"REQUEST COMPLETE - Method: {method}, Path: {path}, "
+            f"Status: {response.status_code}, Duration: {duration_ms:.2f}ms"
+        )
+        
+        return response
+    except Exception as e:
+        duration_ms = (time.time() - start_time) * 1000
+        logger.error(
+            f"REQUEST ERROR - Method: {method}, Path: {path}, "
+            f"Error: {str(e)}, Duration: {duration_ms:.2f}ms",
+            exc_info=True
+        )
+        raise
 
 
 async def https_redirect_middleware(request: Request, call_next):

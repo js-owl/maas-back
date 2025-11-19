@@ -113,6 +113,7 @@ async def get_file_download_path(file_record: models.FileStorage) -> Optional[Pa
 async def get_file_preview_path(db: AsyncSession, file_id: int) -> Optional[Path]:
     """Get preview image path for a file"""
     preview_path_str = await repo_get_file_preview_path(db, file_id)
+    print('===== service get_file_preview_path', preview_path_str)
     if not preview_path_str:
         return None
     

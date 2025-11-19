@@ -5,11 +5,18 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - CORS_ORIGINS=["*"]
-      - CORS_ALLOW_CREDENTIALS=true
-      - CORS_ALLOW_METHODS=["*"]
-      - CORS_ALLOW_HEADERS=["*"]
+      CORS_ORIGINS: '["*"]'
+      CORS_ALLOW_CREDENTIALS: "true"
+      CORS_ALLOW_METHODS: '["*"]'
+      CORS_ALLOW_HEADERS: '["*"]'
+      REDIS_HOST: "redis-dev"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_STREAM_PREFIX: "bitrix:"
+      BITRIX_WORKER_ENABLED: "true"
     restart: unless-stopped
+    depends_on:
+      - redis
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -56,6 +63,36 @@ services:
         delay: 5s
         max_attempts: 3
 
+  redis:
+    image: ${NEXUS_BUILD_REGISTRY:-vortex.kronshtadt.ru:8443}/maas-proxy/redis:8.2.3
+    container_name: redis-dev
+    volumes:
+      - ./redis-data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    networks:
+      - maas-internal
+      - traefik-global-proxy
+    deploy:
+      replicas: 1
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+
 networks:
   maas-internal:
     external: true
@@ -67,4 +104,5 @@ volumes:
   logs:
   data:
   main:
+  redis-data:
 

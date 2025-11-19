@@ -31,10 +31,12 @@ RUN apt-get update && apt-get install -y \
 # Copy pip.conf if it exists (optional)
 #COPY pip.conf /etc/pip.conf
 
+# Copy requirements first for better caching
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy only necessary application code (backend directory)
+COPY backend/ ./backend/
 
 # Create uploads directory
 RUN mkdir -p uploads/3d_models uploads/temp uploads/documents uploads/previews data logs

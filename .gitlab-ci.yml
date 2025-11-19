@@ -40,6 +40,17 @@ build:production:
     - echo $NEXUS_PUSH_PASSWORD | docker login -u $NEXUS_PUSH_USER --password-stdin $NEXUS_PUSH_REGISTRY
     # Try to pull previous image for cache (ignore if not found) from PUSH registry
     - docker pull $PROD_PUSH_IMAGE:latest || true
+    # Pull Redis image: try maas-hosted first, fallback to maas-proxy
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 2>/dev/null; then
+        echo "✅ Pulled Redis from maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 2>/dev/null; then
+        echo "✅ Pulled Redis from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3
+      else
+        echo "⚠️ Could not pull Redis image, will skip pushing"
+      fi
   script:
     # Build image with private registry credentials and cache
     - |
@@ -58,8 +69,11 @@ build:production:
     # Push both tags to Nexus push registry
     - docker push $PROD_PUSH_IMAGE:${CI_COMMIT_TAG}
     - docker push $PROD_PUSH_IMAGE:latest
+    # Push Redis image to push registry
+    - docker push ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || true
     # Clean up local images
     - docker rmi $PROD_PUSH_IMAGE:${CI_COMMIT_TAG} $PROD_PUSH_IMAGE:latest || true
+    - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || true
   only:
     - /^v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -84,6 +98,17 @@ build:development:
     - echo $NEXUS_BUILD_PASSWORD | docker login -u $NEXUS_BUILD_USER --password-stdin $NEXUS_BUILD_REGISTRY
     # Try to pull previous dev image for cache (ignore if not found) from BUILD registry
     - docker pull $DEV_BUILD_IMAGE:dev-latest || true
+    # Pull Redis image: try maas-hosted first, fallback to maas-proxy
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 2>/dev/null; then
+        echo "✅ Pulled Redis from maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 2>/dev/null; then
+        echo "✅ Pulled Redis from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3
+      else
+        echo "⚠️ Could not pull Redis image, will skip pushing"
+      fi
   script:
     # Build image with private registry credentials and cache
     - |
@@ -102,8 +127,11 @@ build:development:
     # Push both tags to BUILD registry
     - docker push $DEV_BUILD_IMAGE:${CI_COMMIT_TAG}
     - docker push $DEV_BUILD_IMAGE:dev-latest
+    # Push Redis image to build registry
+    - docker push ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || true
     # Clean up local images
     - docker rmi $DEV_BUILD_IMAGE:${CI_COMMIT_TAG} $DEV_BUILD_IMAGE:dev-latest || true
+    - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || true
   only:
     - /^dev-v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -163,6 +191,17 @@ deploy:production:
         echo ${NEXUS_PUSH_PASSWORD} | docker login -u ${NEXUS_PUSH_USER} --password-stdin ${NEXUS_PUSH_REGISTRY}
         echo "✅ Successfully logged into Nexus registry"
         
+        # Create redis-data directory and set ownership
+        echo "📁 Creating redis-data directory..."
+        sudo mkdir -p ${REMOTE_PROJECT_PATH}/redis-data
+        sudo chown -R ${SSH_USER}:${SSH_USER} ${REMOTE_PROJECT_PATH}/redis-data
+        echo "✅ Created and configured redis-data directory"
+        
+        # Pull Redis image before backend
+        echo "📥 Pulling Redis image..."
+        sudo docker pull ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 || echo "⚠️ Could not pull Redis image, will use fallback"
+        echo "✅ Redis image pull completed"
+        
         # Update docker-compose.prod.yml image tag
         echo "🔄 Updating docker-compose.prod.yml with new image tag..."
         sed -i "s|image:.*maas-backend:.*|image: ${PROD_PUSH_IMAGE}:${CI_COMMIT_TAG}|g" docker-compose.prod.yml
@@ -197,7 +236,7 @@ deploy:production:
         fi
         
         # Check if application is responding
-        CONTAINER_NAME=\$(sudo docker compose -f docker-compose.prod.yml ps -q)
+        CONTAINER_NAME=\$(sudo docker compose -f docker-compose.prod.yml ps -q backend)
         if [ -n "\$CONTAINER_NAME" ]; then
           # Wait for application to be ready
           for i in {1..30}; do
@@ -213,6 +252,8 @@ deploy:production:
               sleep 2
             fi
           done
+        else
+          echo "⚠️ Backend container not found, skipping health check"
         fi
         
         # Log deployment info
@@ -289,6 +330,17 @@ deploy:development:
         echo ${NEXUS_BUILD_PASSWORD} | docker login -u ${NEXUS_BUILD_USER} --password-stdin ${NEXUS_BUILD_REGISTRY}
         echo "✅ Successfully logged into BUILD registry"
         
+        # Create redis-data directory and set ownership
+        echo "📁 Creating redis-data directory..."
+        sudo mkdir -p ${DEV_REMOTE_PROJECT_PATH}/redis-data
+        sudo chown -R ${DEV_SSH_USER}:${DEV_SSH_USER} ${DEV_REMOTE_PROJECT_PATH}/redis-data
+        echo "✅ Created and configured redis-data directory"
+        
+        # Pull Redis image before backend
+        echo "📥 Pulling Redis image..."
+        sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 || echo "⚠️ Could not pull Redis image, will use fallback"
+        echo "✅ Redis image pull completed"
+        
         # Update docker-compose.dev.yml image tag
         echo "🔄 Updating docker-compose.dev.yml with new image tag..."
         sed -i "s|image:.*maas-backend:.*|image: ${DEV_BUILD_IMAGE}:${CI_COMMIT_TAG}|g" docker-compose.dev.yml
@@ -323,7 +375,7 @@ deploy:development:
         fi
         
         # Check if application is responding
-        CONTAINER_NAME=\$(sudo docker compose -f docker-compose.dev.yml ps -q)
+        CONTAINER_NAME=\$(sudo docker compose -f docker-compose.dev.yml ps -q backend)
         if [ -n "\$CONTAINER_NAME" ]; then
           # Wait for application to be ready
           for i in {1..30}; do
@@ -339,6 +391,8 @@ deploy:development:
               sleep 2
             fi
           done
+        else
+          echo "⚠️ Backend container not found, skipping health check"
         fi
         
         # Log deployment info

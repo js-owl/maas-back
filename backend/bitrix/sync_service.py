@@ -1,23 +1,21 @@
 """
 Bitrix synchronization service
-Handles queuing and processing of Bitrix sync operations
+Handles queuing of Bitrix sync operations via Redis Streams
 """
-import asyncio
 import json
-from datetime import datetime, timezone
-from typing import List, Optional, Dict, Any
+from typing import Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, update
+from sqlalchemy import select
 from backend import models
-from backend.core.exceptions import BitrixException, ExternalServiceException
 from backend.bitrix.client import bitrix_client
+from backend.bitrix.queue_service import bitrix_queue_service
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
 
 
 class BitrixSyncService:
-    """Service for managing Bitrix synchronization queue"""
+    """Service for managing Bitrix synchronization via Redis Streams"""
     
     def __init__(self):
         self.max_attempts = 5
@@ -29,9 +27,9 @@ class BitrixSyncService:
         order_id: int, 
         user_id: int, 
         file_id: Optional[int] = None, 
-        document_ids: Optional[List[int]] = None
+        document_ids: Optional[list] = None
     ) -> None:
-        """Queue order→deal sync operation"""
+        """Queue order→deal sync operation to Redis Streams"""
         try:
             # Get order and user data
             order_result = await db.execute(select(models.Order).where(models.Order.order_id == order_id))
@@ -66,26 +64,75 @@ class BitrixSyncService:
                 }
             }
             
-            # Create sync queue entry
-            sync_entry = models.BitrixSyncQueue(
+            # Publish to Redis Stream
+            message_id = await bitrix_queue_service.publish_operation(
                 entity_type="deal",
                 entity_id=order_id,
                 operation="create",
-                payload=json.dumps(payload),
-                status="pending"
+                payload=payload
             )
             
-            db.add(sync_entry)
-            await db.commit()
-            
-            logger.info(f"[QUEUE_DEAL] Queued deal creation for order {order_id}")
+            if message_id:
+                logger.info(f"[QUEUE_DEAL] Queued deal creation for order {order_id} (message_id: {message_id})")
+            else:
+                logger.error(f"[QUEUE_DEAL] Failed to queue deal creation for order {order_id}")
             
         except Exception as e:
-            logger.error(f"[QUEUE_DEAL] Error queuing deal creation: {e}")
+            logger.error(f"[QUEUE_DEAL] Error queuing deal creation: {e}", exc_info=True)
+            raise
+    
+    async def queue_deal_update(
+        self,
+        db: AsyncSession,
+        order_id: int
+    ) -> None:
+        """Queue order→deal update operation to Redis Streams"""
+        try:
+            # Get order data
+            order_result = await db.execute(select(models.Order).where(models.Order.order_id == order_id))
+            order = order_result.scalar_one_or_none()
+            
+            if not order:
+                logger.error(f"[QUEUE_DEAL_UPDATE] Order {order_id} not found")
+                return
+            
+            # Check if deal exists
+            if not order.bitrix_deal_id:
+                logger.warning(f"[QUEUE_DEAL_UPDATE] Order {order_id} has no Bitrix deal ID, skipping update")
+                return
+            
+            # Prepare payload
+            payload = {
+                "order_id": order_id,
+                "bitrix_deal_id": order.bitrix_deal_id,
+                "order_data": {
+                    "service_id": order.service_id,
+                    "quantity": order.quantity,
+                    "total_price": order.total_price,
+                    "status": order.status,
+                    "updated_at": order.updated_at.isoformat() if order.updated_at else None
+                }
+            }
+            
+            # Publish to Redis Stream
+            message_id = await bitrix_queue_service.publish_operation(
+                entity_type="deal",
+                entity_id=order_id,
+                operation="update",
+                payload=payload
+            )
+            
+            if message_id:
+                logger.info(f"[QUEUE_DEAL_UPDATE] Queued deal update for order {order_id} (message_id: {message_id})")
+            else:
+                logger.error(f"[QUEUE_DEAL_UPDATE] Failed to queue deal update for order {order_id}")
+            
+        except Exception as e:
+            logger.error(f"[QUEUE_DEAL_UPDATE] Error queuing deal update: {e}", exc_info=True)
             raise
     
     async def queue_contact_creation(self, db: AsyncSession, user_id: int) -> None:
-        """Queue user→contact sync operation"""
+        """Queue user→contact sync operation to Redis Streams"""
         try:
             # Get user data
             user_result = await db.execute(select(models.User).where(models.User.id == user_id))
@@ -95,18 +142,9 @@ class BitrixSyncService:
                 logger.error(f"[QUEUE_CONTACT] User {user_id} not found")
                 return
             
-            # Check if already queued or synced
-            existing_result = await db.execute(
-                select(models.BitrixSyncQueue).where(
-                    models.BitrixSyncQueue.entity_type == "contact",
-                    models.BitrixSyncQueue.entity_id == user_id,
-                    models.BitrixSyncQueue.status.in_(["pending", "processing", "completed"])
-                )
-            )
-            existing = existing_result.scalar_one_or_none()
-            
-            if existing:
-                logger.info(f"[QUEUE_CONTACT] Contact sync already queued for user {user_id}")
+            # Check if already synced
+            if user.bitrix_contact_id:
+                logger.info(f"[QUEUE_CONTACT] User {user_id} already has Bitrix contact {user.bitrix_contact_id}")
                 return
             
             # Prepare payload
@@ -123,26 +161,25 @@ class BitrixSyncService:
                 }
             }
             
-            # Create sync queue entry
-            sync_entry = models.BitrixSyncQueue(
+            # Publish to Redis Stream
+            message_id = await bitrix_queue_service.publish_operation(
                 entity_type="contact",
                 entity_id=user_id,
                 operation="create",
-                payload=json.dumps(payload),
-                status="pending"
+                payload=payload
             )
             
-            db.add(sync_entry)
-            await db.commit()
-            
-            logger.info(f"[QUEUE_CONTACT] Queued contact creation for user {user_id}")
+            if message_id:
+                logger.info(f"[QUEUE_CONTACT] Queued contact creation for user {user_id} (message_id: {message_id})")
+            else:
+                logger.error(f"[QUEUE_CONTACT] Failed to queue contact creation for user {user_id}")
             
         except Exception as e:
-            logger.error(f"[QUEUE_CONTACT] Error queuing contact creation: {e}")
+            logger.error(f"[QUEUE_CONTACT] Error queuing contact creation: {e}", exc_info=True)
             raise
     
     async def queue_lead_creation(self, db: AsyncSession, call_request_id: int) -> None:
-        """Queue call_request→lead sync operation"""
+        """Queue call_request→lead sync operation to Redis Streams"""
         try:
             # Get call request data
             cr_result = await db.execute(select(models.CallRequest).where(models.CallRequest.id == call_request_id))
@@ -183,254 +220,61 @@ class BitrixSyncService:
                 }
             }
             
-            # Create sync queue entry
-            sync_entry = models.BitrixSyncQueue(
+            # Publish to Redis Stream
+            message_id = await bitrix_queue_service.publish_operation(
                 entity_type="lead",
                 entity_id=call_request_id,
                 operation="create",
-                payload=json.dumps(payload),
-                status="pending"
+                payload=payload
             )
             
-            db.add(sync_entry)
-            await db.commit()
-            
-            logger.info(f"[QUEUE_LEAD] Queued lead creation for call request {call_request_id}")
+            if message_id:
+                logger.info(f"[QUEUE_LEAD] Queued lead creation for call request {call_request_id} (message_id: {message_id})")
+            else:
+                logger.error(f"[QUEUE_LEAD] Failed to queue lead creation for call request {call_request_id}")
             
         except Exception as e:
-            logger.error(f"[QUEUE_LEAD] Error queuing lead creation: {e}")
+            logger.error(f"[QUEUE_LEAD] Error queuing lead creation: {e}", exc_info=True)
             raise
     
-    async def process_sync_queue(self, db: AsyncSession, limit: int = 10) -> Dict[str, int]:
-        """Process pending sync queue items"""
-        if not bitrix_client.is_configured():
-            logger.warning("[PROCESS_SYNC] Bitrix not configured, skipping sync processing")
-            return {"processed": 0, "failed": 0, "completed": 0}
-        
-        try:
-            # Get pending items
-            result = await db.execute(
-                select(models.BitrixSyncQueue)
-                .where(models.BitrixSyncQueue.status == "pending")
-                .limit(limit)
-            )
-            pending_items = result.scalars().all()
-            
-            stats = {"processed": 0, "failed": 0, "completed": 0}
-            
-            for item in pending_items:
-                try:
-                    # Mark as processing
-                    await db.execute(
-                        update(models.BitrixSyncQueue)
-                        .where(models.BitrixSyncQueue.id == item.id)
-                        .values(
-                            status="processing",
-                            attempts=item.attempts + 1,
-                            last_attempt=datetime.now(timezone.utc)
-                        )
-                    )
-                    await db.commit()
-                    
-                    # Process based on entity type
-                    success = False
-                    if item.entity_type == "deal":
-                        success = await self._process_deal_sync(db, item)
-                    elif item.entity_type == "contact":
-                        success = await self._process_contact_sync(db, item)
-                    elif item.entity_type == "lead":
-                        success = await self._process_lead_sync(db, item)
-                    
-                    if success:
-                        # Mark as completed
-                        await db.execute(
-                            update(models.BitrixSyncQueue)
-                            .where(models.BitrixSyncQueue.id == item.id)
-                            .values(
-                                status="completed",
-                                error_message=None
-                            )
-                        )
-                        stats["completed"] += 1
-                        logger.info(f"[PROCESS_SYNC] Completed {item.entity_type} sync for entity {item.entity_id}")
-                    else:
-                        # Handle retry logic
-                        if item.attempts >= self.max_attempts:
-                            await db.execute(
-                                update(models.BitrixSyncQueue)
-                                .where(models.BitrixSyncQueue.id == item.id)
-                                .values(status="failed")
-                            )
-                            stats["failed"] += 1
-                            logger.error(f"[PROCESS_SYNC] Failed {item.entity_type} sync for entity {item.entity_id} after {item.attempts} attempts")
-                        else:
-                            await db.execute(
-                                update(models.BitrixSyncQueue)
-                                .where(models.BitrixSyncQueue.id == item.id)
-                                .values(status="pending")
-                            )
-                            stats["failed"] += 1
-                            logger.warning(f"[PROCESS_SYNC] Retrying {item.entity_type} sync for entity {item.entity_id} (attempt {item.attempts})")
-                    
-                    await db.commit()
-                    stats["processed"] += 1
-                    
-                except Exception as e:
-                    logger.error(f"[PROCESS_SYNC] Error processing sync item {item.id}: {e}")
-                    stats["failed"] += 1
-                    
-                    # Mark as failed if max attempts reached
-                    if item.attempts >= self.max_attempts:
-                        await db.execute(
-                            update(models.BitrixSyncQueue)
-                            .where(models.BitrixSyncQueue.id == item.id)
-                            .values(
-                                status="failed",
-                                error_message=str(e)
-                            )
-                        )
-                    else:
-                        await db.execute(
-                            update(models.BitrixSyncQueue)
-                            .where(models.BitrixSyncQueue.id == item.id)
-                            .values(
-                                status="pending",
-                                error_message=str(e)
-                            )
-                        )
-                    await db.commit()
-            
-            logger.info(f"[PROCESS_SYNC] Processed {stats['processed']} items: {stats['completed']} completed, {stats['failed']} failed")
-            return stats
-            
-        except Exception as e:
-            logger.error(f"[PROCESS_SYNC] Error processing sync queue: {e}")
-            raise
-    
-    async def _process_deal_sync(self, db: AsyncSession, sync_item: models.BitrixSyncQueue) -> bool:
-        """Process deal creation sync"""
-        try:
-            payload = json.loads(sync_item.payload)
-            order_id = payload["order_id"]
-            user_id = payload["user_id"]
-            
-            # Create deal in Bitrix
-            deal_id = await bitrix_client.create_deal_from_order_data(
-                order_data=payload["order_data"],
-                user_data=payload["user_data"],
-                file_id=payload.get("file_id"),
-                document_ids=payload.get("document_ids", [])
-            )
-            
-            if deal_id:
-                # Update order with Bitrix deal ID
-                await db.execute(
-                    update(models.Order)
-                    .where(models.Order.order_id == order_id)
-                    .values(bitrix_deal_id=deal_id)
-                )
-                logger.info(f"[PROCESS_DEAL] Created Bitrix deal {deal_id} for order {order_id}")
-                return True
-            else:
-                logger.error(f"[PROCESS_DEAL] Failed to create Bitrix deal for order {order_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"[PROCESS_DEAL] Error processing deal sync: {e}")
-            return False
-    
-    async def _process_contact_sync(self, db: AsyncSession, sync_item: models.BitrixSyncQueue) -> bool:
-        """Process contact creation sync"""
-        try:
-            payload = json.loads(sync_item.payload)
-            user_id = payload["user_id"]
-            
-            # Create contact in Bitrix
-            contact_id = await bitrix_client.create_contact(payload["user_data"])
-            
-            if contact_id:
-                # Update user with Bitrix contact ID
-                await db.execute(
-                    update(models.User)
-                    .where(models.User.id == user_id)
-                    .values(bitrix_contact_id=contact_id)
-                )
-                logger.info(f"[PROCESS_CONTACT] Created Bitrix contact {contact_id} for user {user_id}")
-                return True
-            else:
-                logger.error(f"[PROCESS_CONTACT] Failed to create Bitrix contact for user {user_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"[PROCESS_CONTACT] Error processing contact sync: {e}")
-            return False
-    
-    async def _process_lead_sync(self, db: AsyncSession, sync_item: models.BitrixSyncQueue) -> bool:
-        """Process lead creation sync"""
-        try:
-            payload = json.loads(sync_item.payload)
-            call_request_id = payload["call_request_id"]
-            user_id = payload["user_id"]
-            
-            # Create lead in Bitrix
-            lead_id = await bitrix_client.create_lead(
-                title=f"Call Request: {payload['call_request_data']['name']}",
-                fields={
-                    "NAME": payload["call_request_data"]["name"],
-                    "PHONE": [{"VALUE": payload["call_request_data"]["phone"]}],
-                    "EMAIL": [{"VALUE": payload["call_request_data"]["email"]}],
-                    "COMMENTS": payload["call_request_data"]["additional"],
-                    "SOURCE_ID": "WEB",
-                    "STATUS_ID": "NEW"
-                }
-            )
-            
-            if lead_id:
-                # Update call request with Bitrix lead ID
-                await db.execute(
-                    update(models.CallRequest)
-                    .where(models.CallRequest.id == call_request_id)
-                    .values(
-                        bitrix_lead_id=lead_id,
-                        bitrix_synced_at=datetime.now(timezone.utc)
-                    )
-                )
-                logger.info(f"[PROCESS_LEAD] Created Bitrix lead {lead_id} for call request {call_request_id}")
-                return True
-            else:
-                logger.error(f"[PROCESS_LEAD] Failed to create Bitrix lead for call request {call_request_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"[PROCESS_LEAD] Error processing lead sync: {e}")
-            return False
+    # Note: process_sync_queue() and _process_*_sync() methods removed
+    # Processing is now handled by the BitrixWorker consuming from Redis Streams
     
     async def get_sync_status(self, db: AsyncSession) -> Dict[str, Any]:
-        """Get sync queue status"""
+        """Get sync queue status from Redis Streams"""
         try:
-            # Count items by status
-            result = await db.execute(
-                select(models.BitrixSyncQueue.status, models.BitrixSyncQueue.entity_type)
+            # Get stream information
+            operations_info = await bitrix_queue_service.get_stream_info(
+                bitrix_queue_service.operations_stream
             )
-            items = result.all()
-            
-            status_counts = {}
-            type_counts = {}
-            
-            for status, entity_type in items:
-                status_counts[status] = status_counts.get(status, 0) + 1
-                type_counts[entity_type] = type_counts.get(entity_type, 0) + 1
+            webhooks_info = await bitrix_queue_service.get_stream_info(
+                bitrix_queue_service.webhooks_stream
+            )
             
             return {
-                "status_counts": status_counts,
-                "type_counts": type_counts,
-                "total_items": len(items),
+                "operations_stream": {
+                    "length": operations_info.get("length", 0),
+                    "groups": operations_info.get("groups", 0),
+                    "last_id": operations_info.get("last_id", "0-0")
+                },
+                "webhooks_stream": {
+                    "length": webhooks_info.get("length", 0),
+                    "groups": webhooks_info.get("groups", 0),
+                    "last_id": webhooks_info.get("last_id", "0-0")
+                },
+                "total_messages": operations_info.get("length", 0) + webhooks_info.get("length", 0),
                 "bitrix_configured": bitrix_client.is_configured()
             }
             
         except Exception as e:
-            logger.error(f"[SYNC_STATUS] Error getting sync status: {e}")
-            raise
+            logger.error(f"[SYNC_STATUS] Error getting sync status: {e}", exc_info=True)
+            return {
+                "operations_stream": {"length": 0, "groups": 0, "last_id": "0-0"},
+                "webhooks_stream": {"length": 0, "groups": 0, "last_id": "0-0"},
+                "total_messages": 0,
+                "bitrix_configured": bitrix_client.is_configured(),
+                "error": str(e)
+            }
 
 
 # Global instance

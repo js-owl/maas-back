@@ -10,14 +10,37 @@ services:
     ports:
       - "8001:8000"
     environment:
-      - CORS_ORIGINS=["*"]
-      - CORS_ALLOW_CREDENTIALS=true
-      - CORS_ALLOW_METHODS=["*"]
-      - CORS_ALLOW_HEADERS=["*"]
-      - CALCULATOR_BASE_URL=http://backend-calc:7000
+      CORS_ORIGINS: '["*"]'
+      CORS_ALLOW_CREDENTIALS: "true"
+      CORS_ALLOW_METHODS: '["*"]'
+      CORS_ALLOW_HEADERS: '["*"]'
+      CALCULATOR_BASE_URL: "http://backend-calc:7000"
+      REDIS_HOST: "redis"
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+      REDIS_STREAM_PREFIX: "bitrix:"
+      BITRIX_WORKER_ENABLED: "true"
+      BITRIX_ENABLED: "true"
+      BITRIX24_WEBHOOK_URL: "https://192.168.20.63/rest/1/8jin8qxzqb3f4v6d/"
+      BITRIX_VERIFY_TLS: "false"
     volumes:
       - ./data:/app/data
       - ./uploads:/app/uploads
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks:
+      - maas-shared
+
+  # Redis service for message queue
+  redis:
+    image: redis:8.2.3
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - ./redis-data:/data
+    command: redis-server --appendonly yes --appendfsync everysec
     restart: unless-stopped
     networks:
       - maas-shared

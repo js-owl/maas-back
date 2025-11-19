@@ -37,7 +37,6 @@ class CalculationsEndpointTester:
         
         # Test services endpoint
         response = await self.client.get(f"{self.base_url}/services")
-        print(f"Testing proxy endpoints 1... {response.status_code}" )
         assert response.status_code == 200
         services = response.json()
         assert isinstance(services, list)

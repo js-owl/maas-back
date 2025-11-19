@@ -41,8 +41,34 @@ class BitrixClient:
         try:
             async with httpx.AsyncClient(timeout=self.timeout_seconds, verify=self.verify_tls) as client:
                 resp = await client.post(url, data=data)
+                
+                # Log detailed error information for debugging
+                if resp.status_code == 401:
+                    error_body = resp.text
+                    logger.error(
+                        f"Bitrix authentication failed for {method}: "
+                        f"Status {resp.status_code}, Response: {error_body[:200]}"
+                    )
+                    logger.error(
+                        f"Bitrix URL used: {url}, "
+                        f"Webhook might be expired or have insufficient permissions"
+                    )
+                elif resp.status_code != 200:
+                    error_body = resp.text
+                    logger.warning(
+                        f"Bitrix request failed for {method}: "
+                        f"Status {resp.status_code}, Response: {error_body[:200]}"
+                    )
+                
                 resp.raise_for_status()
                 return resp.json()
+        except httpx.HTTPStatusError as exc:
+            error_body = exc.response.text if exc.response else "No response body"
+            logger.error(
+                f"Bitrix HTTP error for {method}: {exc.response.status_code if exc.response else 'Unknown'}, "
+                f"Response: {error_body[:200]}"
+            )
+            return None
         except Exception as exc:
             logger.warning("Bitrix request failed (%s): %s", method, exc)
             return None
@@ -180,20 +206,35 @@ class BitrixClient:
     async def create_contact(self, user_data: Dict[str, Any]) -> Optional[int]:
         """Create contact in Bitrix"""
         try:
-            contact_data = {
-                "NAME": user_data.get("full_name", user_data.get("username", "")),
-                "EMAIL": [{"VALUE": user_data.get("email", ""), "VALUE_TYPE": "WORK"}] if user_data.get("email") else [],
-                "PHONE": [{"VALUE": user_data.get("phone_number", ""), "VALUE_TYPE": "WORK"}] if user_data.get("phone_number") else [],
-                "COMPANY_TITLE": user_data.get("company", ""),
-                "ADDRESS_CITY": user_data.get("city", ""),
-                "SOURCE_ID": "WEB",
-                "TYPE_ID": "CLIENT"
-            }
+            # Build payload using FIELDS[KEY] format (Bitrix API format)
+            payload = {}
             
-            # Remove empty fields
-            contact_data = {k: v for k, v in contact_data.items() if v}
+            # Name is required
+            name = user_data.get("full_name") or user_data.get("username", "")
+            if name:
+                payload["FIELDS[NAME]"] = name
             
-            resp = await self._post("crm.contact.add", {"fields": contact_data})
+            # Email as array
+            if user_data.get("email"):
+                payload["FIELDS[EMAIL]"] = [{"VALUE": user_data.get("email", ""), "VALUE_TYPE": "WORK"}]
+            
+            # Phone as array
+            if user_data.get("phone_number"):
+                payload["FIELDS[PHONE]"] = [{"VALUE": user_data.get("phone_number", ""), "VALUE_TYPE": "WORK"}]
+            
+            # Company
+            if user_data.get("company"):
+                payload["FIELDS[COMPANY_TITLE]"] = user_data.get("company")
+            
+            # City
+            if user_data.get("city"):
+                payload["FIELDS[ADDRESS_CITY]"] = user_data.get("city")
+            
+            # Source and type
+            payload["FIELDS[SOURCE_ID]"] = "WEB"
+            payload["FIELDS[TYPE_ID]"] = "CLIENT"
+            
+            resp = await self._post("crm.contact.add", payload)
             if resp and "result" in resp:
                 return int(resp["result"])
             return None

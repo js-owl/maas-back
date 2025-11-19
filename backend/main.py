@@ -24,6 +24,7 @@ from fastapi import Request
 from backend.utils.logging import get_logger
 import os
 import json
+import time
 
 logger = get_logger(__name__)
 
@@ -72,6 +73,10 @@ def custom_openapi():
     return app.openapi_schema
 
 app.openapi = custom_openapi
+
+# Add request logging middleware (before other middleware to capture all requests)
+from backend.core.middleware import request_logging_middleware
+app.middleware("http")(request_logging_middleware)
 
 # Add HTTPS redirect middleware
 app.middleware("http")(https_redirect_middleware)
@@ -194,6 +199,93 @@ async def detailed_health_check():
     }
 
 
+@app.api_route('/debug/request', methods=['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], tags=["Debug"])
+async def debug_request(request: Request):
+    """
+    Diagnostic endpoint to verify requests reach FastAPI application.
+    Returns all request details including headers, method, path, and forwarded headers.
+    Useful for debugging 403 errors from nginx/Traefik.
+    """
+    # Capture all headers
+    headers_dict = {}
+    for key, value in request.headers.items():
+        # Sanitize authorization header for security
+        if key.lower() == "authorization":
+            if value.startswith("Bearer "):
+                headers_dict[key] = value[:20] + "..." if len(value) > 20 else value
+            else:
+                headers_dict[key] = "***REDACTED***"
+        else:
+            headers_dict[key] = value
+    
+    # Get client information
+    client_ip = request.client.host if request.client else "unknown"
+    client_port = request.client.port if request.client else None
+    
+    # Get forwarded headers (important for proxy debugging)
+    forwarded_headers = {
+        "X-Forwarded-Proto": request.headers.get("X-Forwarded-Proto", "N/A"),
+        "X-Forwarded-Host": request.headers.get("X-Forwarded-Host", "N/A"),
+        "X-Forwarded-For": request.headers.get("X-Forwarded-For", "N/A"),
+        "X-Real-IP": request.headers.get("X-Real-IP", "N/A"),
+        "X-Forwarded-Port": request.headers.get("X-Forwarded-Port", "N/A"),
+    }
+    
+    # Try to read request body if present (for POST/PUT requests)
+    body_content = None
+    try:
+        if request.method in ['POST', 'PUT', 'PATCH']:
+            body_bytes = await request.body()
+            if body_bytes:
+                try:
+                    body_content = json.loads(body_bytes.decode('utf-8'))
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    body_content = f"<binary or non-json content, length: {len(body_bytes)} bytes>"
+    except Exception as e:
+        body_content = f"<error reading body: {str(e)}>"
+    
+    response_data = {
+        "status": "request_received",
+        "message": "Request successfully reached FastAPI application",
+        "request_details": {
+            "method": request.method,
+            "path": str(request.url.path),
+            "query_params": dict(request.query_params),
+            "client": {
+                "ip": client_ip,
+                "port": client_port
+            },
+            "url": {
+                "scheme": request.url.scheme,
+                "netloc": request.url.netloc,
+                "path": request.url.path,
+                "query": request.url.query,
+                "fragment": request.url.fragment
+            },
+            "forwarded_headers": forwarded_headers,
+            "all_headers": headers_dict,
+            "body": body_content
+        },
+        "proxy_detection": {
+            "behind_proxy": bool(request.headers.get("X-Forwarded-For") or request.headers.get("X-Real-IP")),
+            "forwarded_proto": request.headers.get("X-Forwarded-Proto", "direct"),
+            "forwarded_host": request.headers.get("X-Forwarded-Host", "direct")
+        },
+        "cors_info": {
+            "origin": request.headers.get("Origin", "N/A"),
+            "access_control_request_method": request.headers.get("Access-Control-Request-Method", "N/A"),
+            "access_control_request_headers": request.headers.get("Access-Control-Request-Headers", "N/A")
+        },
+        "timestamp": time.time()
+    }
+    
+    # Log the diagnostic request
+    logger.info(f"DEBUG REQUEST - Method: {request.method}, Path: {request.url.path}, Client: {client_ip}")
+    logger.debug(f"Debug request details: {json.dumps(response_data, indent=2, default=str)}")
+    
+    return response_data
+
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
@@ -205,6 +297,31 @@ async def startup_event():
     
     # Seed admin user
     await seed_admin()
+    
+    # Start Bitrix worker if enabled
+    from backend.core.config import BITRIX_WORKER_ENABLED
+    if BITRIX_WORKER_ENABLED:
+        from backend.bitrix.worker import bitrix_worker
+        import asyncio
+        
+        async def start_worker():
+            """Start Bitrix worker in background"""
+            try:
+                logger.info("Starting Bitrix worker background task...")
+                logger.info(f"About to call bitrix_worker.process_messages(), worker object: {bitrix_worker}")
+                await bitrix_worker.process_messages()
+                logger.info("bitrix_worker.process_messages() completed")
+            except Exception as e:
+                logger.error(f"Bitrix worker error: {e}", exc_info=True)
+                import traceback
+                logger.error(f"Traceback: {traceback.format_exc()}")
+        
+        # Start worker as background task
+        task = asyncio.create_task(start_worker())
+        logger.info(f"Bitrix worker task created: {task}")
+        logger.info("Bitrix worker started in background")
+    else:
+        logger.info("Bitrix worker is disabled (BITRIX_WORKER_ENABLED=false)")
     
     logger.info("Application startup complete")
 
