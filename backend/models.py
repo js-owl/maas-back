@@ -123,6 +123,7 @@ class Order(Base):
     k_p = Column(Float, nullable=True)
     manufacturing_cycle = Column(Float, nullable=True)  # Manufacturing cycle from calculator service
     suitable_machines = Column(Text, nullable=True)  # JSON array of suitable manufacturing machines
+    total_price_breakdown = Column(Text, nullable=True)  # JSON array of suitable manufacturing machines
     # Calculation type information
     calculation_type = Column(String, nullable=True)  # "ml_based", "rule_based", or "unknown"
     ml_model = Column(String, nullable=True)  # ML model name if available

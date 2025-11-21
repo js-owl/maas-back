@@ -56,6 +56,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         total_time=calc.get('total_time') if calc else None,
         manufacturing_cycle=calc.get('manufacturing_cycle') if calc else None,
         suitable_machines=json.dumps(calc.get('suitable_machines')) if calc and calc.get('suitable_machines') else None,
+        total_price_breakdown=json.dumps(calc.get('total_price_breakdown')) if calc and calc.get('total_price_breakdown') else None,
         # Calculation type information
         calculation_type=calc.get('calculation_type') if calc else None,
         ml_model=calc.get('ml_model') if calc else None,

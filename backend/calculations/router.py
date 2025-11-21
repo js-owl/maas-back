@@ -306,6 +306,7 @@ async def calculate_price(
         "total_time": data.get("total_time", 0),
         "manufacturing_cycle": float(data.get("manufacturing_cycle") or 0),  # Optional field from calculator service, default to 0.0 if null
         "suitable_machines": data.get("suitable_machines"),  # Suitable manufacturing machines from calculator service
+        "total_price_breakdown": data.get("total_price_breakdown"),  # Suitable manufacturing machines from calculator service
         "calculation_type": calculation_type,  # "ml_based", "rule_based", or "unknown"
         "ml_model": data.get("ml_model"),  # ML model name if available
         "ml_confidence": data.get("ml_confidence"),  # ML confidence score if available

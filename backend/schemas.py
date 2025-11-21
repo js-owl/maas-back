@@ -371,6 +371,7 @@ class OrderOut(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
+    total_price_breakdown: Optional[Dict[str, Any]]
     status: str
     # Calculation coefficients
     k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
