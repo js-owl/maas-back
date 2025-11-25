@@ -115,6 +115,14 @@ async def update_profile(
             logger.error(f"User {current_user.id} not found after update attempt")
             raise HTTPException(status_code=404, detail="User not found")
         
+        # Queue Bitrix contact update if user has a Bitrix contact
+        if updated_user.bitrix_contact_id:
+            try:
+                from backend.bitrix.sync_service import bitrix_sync_service
+                await bitrix_sync_service.queue_contact_update(db, updated_user.id)
+            except Exception as e:
+                logger.warning(f"Failed to queue Bitrix contact update for user {updated_user.id}: {e}")
+        
         logger.info(f"Profile updated successfully for user {current_user.id} (type: {updated_user.user_type})")
         return updated_user
     except HTTPException:
@@ -165,6 +173,15 @@ async def update_user_by_id_endpoint(
         updated_user = await update_user(db, user_id, user_update)
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
+        
+        # Queue Bitrix contact update if user has a Bitrix contact
+        if updated_user.bitrix_contact_id:
+            try:
+                from backend.bitrix.sync_service import bitrix_sync_service
+                await bitrix_sync_service.queue_contact_update(db, updated_user.id)
+            except Exception as e:
+                logger.warning(f"Failed to queue Bitrix contact update for user {updated_user.id}: {e}")
+        
         return updated_user
     except HTTPException:
         raise

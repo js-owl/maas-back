@@ -62,6 +62,9 @@ data/**
 !data/shop.db
 *.db-journal
 
+# Redis data
+redis-data/
+
 # Alembic
 alembic/versions/*.pyc
 

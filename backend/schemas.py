@@ -451,6 +451,27 @@ class OrderOut(BaseModel):
                 return None
         return v
     
+    @validator('total_price_breakdown', pre=True)
+    def parse_total_price_breakdown(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                import json
+                parsed = json.loads(v)
+                # Ensure it's a dictionary, not a list or other type
+                if isinstance(parsed, dict):
+                    return parsed
+                else:
+                    # If it's not a dict, return None or wrap it
+                    return None
+            except (json.JSONDecodeError, ValueError, TypeError):
+                return None
+        # If it's already a dict, return as-is
+        if isinstance(v, dict):
+            return v
+        return None
+    
     class Config:
         from_attributes = True
 
@@ -818,11 +839,11 @@ class OrderCreateRequest(BaseModel):
     material_id: str = "alum_D16"
     material_form: str = "rod"
     special_instructions: Optional[str] = None
-    tolerance_id: str
-    finish_id: str
-    cover_id: List[str] = []
-    k_otk: str
-    k_cert: List[str]
+    tolerance_id: str = "1"  # Default value to match OrderCreate
+    finish_id: str = "1"  # Default value to match OrderCreate
+    cover_id: List[str] = ["1"]  # Default value to match OrderCreate
+    k_otk: str = "1"  # Default value to match OrderCreate
+    k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
     n_dimensions: int = 1
     document_ids: Optional[List[int]] = []
 

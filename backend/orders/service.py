@@ -232,8 +232,45 @@ async def get_all_orders(db: AsyncSession) -> List[models.Order]:
 
 
 async def update_order(db: AsyncSession, order_id: int, order_update: schemas.OrderUpdate) -> Optional[models.Order]:
-    """Update order"""
-    return await repo_update_order(db, order_id, order_update)
+    """Update order and recalculate price"""
+    updated_order = await repo_update_order(db, order_id, order_update)
+    
+    if not updated_order:
+        return None
+    
+    # Recalculate price after updating order fields
+    # This will save the new price and calculation fields to the database
+    try:
+        success = await recalculate_order_price(db, updated_order)
+        if not success:
+            logger.warning(f"Failed to recalculate price for order {order_id}, but order was updated")
+        else:
+            logger.info(f"Price recalculated successfully for order {order_id}")
+        
+        # Always refresh order to get the latest values including price fields
+        # repo_update_order_calc_fields commits the changes, so we need to refresh to see them
+        updated_order = await repo_get_order_by_id(db, order_id)
+        if not updated_order:
+            logger.error(f"Failed to retrieve updated order {order_id} after recalculation")
+    except Exception as e:
+        logger.error(f"Error recalculating price for order {order_id}: {e}", exc_info=True)
+        # Don't fail the update if recalculation fails, but log the error
+        # Still try to refresh the order to return the latest state
+        try:
+            updated_order = await repo_get_order_by_id(db, order_id)
+        except Exception as refresh_error:
+            logger.error(f"Failed to refresh order {order_id} after recalculation error: {refresh_error}")
+    
+    # Queue Bitrix deal update if order has a Bitrix deal
+    if updated_order and updated_order.bitrix_deal_id:
+        try:
+            from backend.bitrix.sync_service import bitrix_sync_service
+            await bitrix_sync_service.queue_deal_update(db, order_id)
+        except Exception as e:
+            logger.warning(f"Failed to queue Bitrix deal update for order {order_id}: {e}")
+            # Don't fail order update if Bitrix sync fails
+    
+    return updated_order
 
 
 async def delete_order(db: AsyncSession, order_id: int) -> bool:

@@ -89,6 +89,7 @@ async def update_order_calc_fields(db: AsyncSession, order_id: int, calc: dict) 
     order.total_time = calc.get('total_time')
     order.manufacturing_cycle = calc.get('manufacturing_cycle')
     order.suitable_machines = json.dumps(calc.get('suitable_machines')) if calc.get('suitable_machines') else None
+    order.total_price_breakdown = json.dumps(calc.get('total_price_breakdown')) if calc.get('total_price_breakdown') else None
     # Update calculation type information
     order.calculation_type = calc.get('calculation_type')
     order.ml_model = calc.get('ml_model')

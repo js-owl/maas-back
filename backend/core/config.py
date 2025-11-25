@@ -21,6 +21,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/shop.db")
 
 # Bitrix24
 BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL")
+BITRIX_MAAS_FUNNEL_NAME = os.getenv("BITRIX_MAAS_FUNNEL_NAME", "MaaS")
+BITRIX_MAAS_CATEGORY_ID = os.getenv("BITRIX_MAAS_CATEGORY_ID")  # Optional, auto-detected if not set
 
 # Redis Configuration
 REDIS_HOST = os.getenv("REDIS_HOST", "localhost")

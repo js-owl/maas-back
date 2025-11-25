@@ -2,7 +2,7 @@
 Bitrix integration router
 Handles Bitrix sync operations and manual endpoints
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from backend.core.dependencies import get_request_db as get_db
 from backend.auth.dependencies import get_current_user
@@ -96,6 +96,64 @@ async def get_sync_status(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get sync status: {str(e)}"
+        )
+
+
+@router.get('/sync/worker/status', tags=["Bitrix Sync"])
+async def get_worker_status(
+    request: Request,
+    admin_user: models.User = Depends(require_admin)
+):
+    """Get worker status and diagnostics (admin only)"""
+    try:
+        from backend.core.config import BITRIX_WORKER_ENABLED
+        from backend.bitrix.worker import bitrix_worker
+        
+        worker_running = bitrix_worker.running
+        worker_task_exists = hasattr(request.app.state, 'bitrix_worker_task') and request.app.state.bitrix_worker_task is not None
+        
+        worker_task_status = "unknown"
+        if worker_task_exists:
+            task = request.app.state.bitrix_worker_task
+            if hasattr(task, 'done'):
+                worker_task_status = "done" if task.done() else "running"
+            else:
+                worker_task_status = "exists"
+        
+        # Get pending messages count
+        from backend.bitrix.queue_service import bitrix_queue_service
+        try:
+            operations_messages = await bitrix_queue_service.get_pending_messages(
+                bitrix_queue_service.operations_stream,
+                count=100,
+                block_ms=0
+            )
+            pending_count = len(operations_messages)
+        except Exception as e:
+            pending_count = -1
+            logger.warning(f"Could not get pending messages count: {e}")
+        
+        return {
+            "success": True,
+            "message": "Worker status retrieved",
+            "data": {
+                "worker_enabled": BITRIX_WORKER_ENABLED,
+                "worker_running": worker_running,
+                "worker_task_exists": worker_task_exists,
+                "worker_task_status": worker_task_status,
+                "pending_messages_count": pending_count,
+                "worker_config": {
+                    "max_retries": bitrix_worker.max_retries,
+                    "batch_size": bitrix_worker.batch_size,
+                    "poll_interval": bitrix_worker.poll_interval
+                }
+            }
+        }
+    except Exception as e:
+        logger.error(f"Error getting worker status: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get worker status: {str(e)}"
         )
 
 

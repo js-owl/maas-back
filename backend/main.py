@@ -298,6 +298,71 @@ async def startup_event():
     # Seed admin user
     await seed_admin()
     
+    # Initialize Bitrix components if configured
+    from backend.bitrix.client import bitrix_client
+    if bitrix_client.is_configured():
+        # Initialize MaaS funnel
+        from backend.bitrix.funnel_manager import funnel_manager
+        try:
+            success = await funnel_manager.ensure_maas_funnel()
+            if success:
+                logger.info(f"MaaS funnel initialized with category ID: {funnel_manager.get_category_id()}")
+            else:
+                logger.warning("Failed to initialize MaaS funnel")
+        except Exception as e:
+            logger.error(f"Error initializing MaaS funnel: {e}", exc_info=True)
+        
+        # Ensure all required user fields exist
+        from backend.bitrix.field_manager import field_manager
+        try:
+            success = await field_manager.ensure_all_fields()
+            if success:
+                logger.info("All required Bitrix user fields ensured")
+            else:
+                logger.warning("Some Bitrix user fields may not have been created")
+        except Exception as e:
+            logger.error(f"Error ensuring Bitrix user fields: {e}", exc_info=True)
+        
+        # Sync all existing orders and contacts to Bitrix if configured
+        if bitrix_client.is_configured():
+            from backend.core.config import BITRIX_WORKER_ENABLED
+            if BITRIX_WORKER_ENABLED:
+                from backend.bitrix.sync_service import bitrix_sync_service
+                from backend.bitrix.cleanup_service import bitrix_cleanup_service
+                from backend.database import AsyncSessionLocal
+                import asyncio
+
+                async def sync_existing_data():
+                    """Sync all existing orders and contacts to Bitrix via Redis queue, and clean up duplicates"""
+                    try:
+                        # Wait a bit for worker to be ready
+                        await asyncio.sleep(2)
+
+                        async with AsyncSessionLocal() as db:
+                            logger.info("Starting sync of existing orders and contacts to Bitrix...")
+
+                            # Sync orders
+                            orders_result = await bitrix_sync_service.sync_all_orders_to_bitrix(db)
+                            logger.info(f"Orders sync result: {orders_result}")
+
+                            # Sync contacts
+                            contacts_result = await bitrix_sync_service.sync_all_contacts_to_bitrix(db)
+                            logger.info(f"Contacts sync result: {contacts_result}")
+
+                            # Clean up duplicate deals
+                            logger.info("Cleaning up duplicate deals...")
+                            cleanup_result = await bitrix_cleanup_service.cleanup_all_duplicate_deals(db)
+                            logger.info(f"Duplicate cleanup result: {cleanup_result}")
+
+                            logger.info("Startup sync completed")
+                    except Exception as e:
+                        logger.error(f"Error during startup sync: {e}", exc_info=True)
+
+                # Start sync in background task
+                sync_task = asyncio.create_task(sync_existing_data())
+                logger.info("Startup sync task created")
+                app.state.bitrix_sync_task = sync_task
+    
     # Start Bitrix worker if enabled
     from backend.core.config import BITRIX_WORKER_ENABLED
     if BITRIX_WORKER_ENABLED:
@@ -309,17 +374,34 @@ async def startup_event():
             try:
                 logger.info("Starting Bitrix worker background task...")
                 logger.info(f"About to call bitrix_worker.process_messages(), worker object: {bitrix_worker}")
+                logger.info(f"Worker running state before call: {bitrix_worker.running}")
+                # Add a small delay to ensure startup completes
+                await asyncio.sleep(2)
+                logger.info("Starting worker process_messages loop...")
+                logger.info("About to await bitrix_worker.process_messages()...")
                 await bitrix_worker.process_messages()
-                logger.info("bitrix_worker.process_messages() completed")
+                logger.warning("bitrix_worker.process_messages() completed - this should not happen unless worker was stopped")
+                logger.info(f"Worker running state after completion: {bitrix_worker.running}")
+            except asyncio.CancelledError:
+                logger.info("Bitrix worker task was cancelled")
+                bitrix_worker.running = False
             except Exception as e:
                 logger.error(f"Bitrix worker error: {e}", exc_info=True)
                 import traceback
                 logger.error(f"Traceback: {traceback.format_exc()}")
+                # Restart worker after error (with delay)
+                logger.info("Restarting worker after error in 5 seconds...")
+                await asyncio.sleep(5)
+                # Recursively restart
+                task = asyncio.create_task(start_worker())
+                app.state.bitrix_worker_task = task
         
-        # Start worker as background task
+        # Start worker as background task (don't await it)
         task = asyncio.create_task(start_worker())
         logger.info(f"Bitrix worker task created: {task}")
         logger.info("Bitrix worker started in background")
+        # Store task reference to prevent garbage collection
+        app.state.bitrix_worker_task = task
     else:
         logger.info("Bitrix worker is disabled (BITRIX_WORKER_ENABLED=false)")
     

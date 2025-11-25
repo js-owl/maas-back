@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy import select
+from sqlalchemy import select, text
 from backend.models import Base, User, FileStorage
 from backend.auth.service import get_password_hash
 import asyncio
@@ -65,7 +65,7 @@ async def ensure_order_new_columns() -> None:
     async with AsyncSessionLocal() as session:
         try:
             # Orders table columns
-            result = await session.execute("PRAGMA table_info('orders')")
+            result = await session.execute(text("PRAGMA table_info('orders')"))
             order_cols = {row[1] for row in result}
             order_alters = []
             if 'length' not in order_cols:
@@ -108,6 +108,8 @@ async def ensure_order_new_columns() -> None:
                 order_alters.append("ALTER TABLE orders ADD COLUMN k_cert TEXT")
             if 'detail_time' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN detail_time REAL")
+            if 'total_price_breakdown' not in order_cols:
+                order_alters.append(text("ALTER TABLE orders ADD COLUMN total_price_breakdown TEXT"))
             for stmt in order_alters:
                 await session.execute(stmt)
             if order_alters:

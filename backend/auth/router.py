@@ -90,30 +90,11 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
     await db.commit()
     await db.refresh(db_user)
     logger.info(f"User created: {db_user.id} - {db_user.username}")
-    # Bitrix: create contact asynchronously with extra fields
+    # Bitrix: queue contact creation via Redis
     try:
-        if bitrix_client.is_configured():
-            contact_fields = {
-                "SOURCE_ID": "WEB",
-                "OPENED": "Y",
-                # App-specific mapping
-                "UF_CRM_APP_USER_ID": str(db_user.id),
-                "UF_CRM_APP_IS_ADMIN": "Y" if db_user.is_admin else "N",
-            }
-            async def _ensure_and_store_contact():
-                contact_id = await bitrix_client.ensure_contact(db_user.username, contact_fields)
-                if contact_id:
-                    try:
-                        # Store on user record
-                        async for session in get_db_session():
-                            user_obj = await get_user_by_id(session, db_user.id)
-                            if user_obj:
-                                user_obj.bitrix_contact_id = contact_id
-                                session.add(user_obj)
-                                await session.commit()
-                    except Exception:
-                        pass
-            asyncio.create_task(_ensure_and_store_contact())
+        from backend.bitrix.sync_service import bitrix_sync_service
+        await bitrix_sync_service.queue_contact_creation(db, db_user.id)
     except Exception as e:
-        logger.warning(f"Bitrix contact scheduling failed: {e}")
+        logger.warning(f"Failed to queue Bitrix contact creation for user {db_user.id}: {e}")
+        # Don't fail user registration if Bitrix sync fails
     return db_user

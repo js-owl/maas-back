@@ -25,13 +25,38 @@ async def create_deal_from_order(
             logger.warning("Bitrix not configured, skipping deal creation")
             return None
         
+        # Get MaaS funnel category and stage mapping
+        from backend.bitrix.funnel_manager import funnel_manager
+        category_id = None
+        stage_id = None
+        
+        # Only use funnel manager if it's initialized
+        if funnel_manager.is_initialized():
+            category_id = funnel_manager.get_category_id()
+            stage_id = funnel_manager.get_stage_id_for_status(order.status)
+        else:
+            logger.debug("Funnel manager not initialized, using default deal creation")
+        
         # Prepare deal fields
         deal_fields = {
-            "FIELDS[STAGE_ID]": "NEW",
             "FIELDS[OPPORTUNITY]": str(order.total_price or 0),
             "FIELDS[CURRENCY_ID]": "RUB",
-            "FIELDS[COMMENTS]": f"Order #{order.id} - {order.service_id}",
+            "FIELDS[COMMENTS]": f"Order #{order.order_id} - {order.service_id}",
         }
+        
+        # Add category ID if MaaS funnel is initialized
+        if category_id:
+            deal_fields["FIELDS[CATEGORY_ID]"] = str(category_id)
+            logger.debug(f"Using MaaS funnel category ID: {category_id}")
+        
+        # Map order status to stage ID
+        if stage_id:
+            deal_fields["FIELDS[STAGE_ID]"] = stage_id
+            logger.debug(f"Mapped order status '{order.status}' to stage ID '{stage_id}'")
+        else:
+            # Fallback to default stage if mapping not available
+            deal_fields["FIELDS[STAGE_ID]"] = "NEW"
+            logger.warning(f"No stage mapping found for order status '{order.status}', using default 'NEW'")
         
         # Add order details
         if order.special_instructions:
@@ -47,9 +72,23 @@ async def create_deal_from_order(
         elif order.dia and order.height:
             deal_fields["FIELDS[COMMENTS]"] += f"\nDimensions: Ø{order.dia}x{order.height}mm"
         
+        # Add contact if available
+        from sqlalchemy import select
+        from backend.database import AsyncSessionLocal
+        async with AsyncSessionLocal() as db:
+            user_result = await db.execute(
+                select(models.User).where(models.User.id == order.user_id)
+            )
+            user = user_result.scalar_one_or_none()
+            if user and user.bitrix_contact_id:
+                deal_fields["FIELDS[CONTACT_ID]"] = str(user.bitrix_contact_id)
+                logger.info(f"Attaching contact {user.bitrix_contact_id} to deal for order {order.order_id}")
+            else:
+                logger.warning(f"User {order.user_id} doesn't have Bitrix contact for order {order.order_id}")
+        
         # Create deal
         deal_id = await bitrix_client.create_deal(
-            title=f"Order #{order.id} - {order.service_id}",
+            title=f"Order #{order.order_id} - {order.service_id}",
             fields=deal_fields
         )
         
@@ -76,14 +115,14 @@ async def create_deal_from_order(
                                 doc.original_filename or doc.document_name
                             )
             
-            logger.info(f"Bitrix deal created: {deal_id} for order {order.id}")
+            logger.info(f"Bitrix deal created: {deal_id} for order {order.order_id}")
             return deal_id
         else:
-            logger.warning(f"Failed to create Bitrix deal for order {order.id}")
+            logger.warning(f"Failed to create Bitrix deal for order {order.order_id}")
             return None
             
     except Exception as e:
-        logger.error(f"Error creating Bitrix deal for order {order.id}: {e}")
+        logger.error(f"Error creating Bitrix deal for order {order.order_id}: {e}")
         return None
 
 

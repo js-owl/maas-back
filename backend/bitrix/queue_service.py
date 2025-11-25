@@ -96,8 +96,11 @@ class BitrixQueueService:
             )
             
             logger.info(
-                f"Published {operation} operation for {entity_type} {entity_id} "
+                f"[QUEUE] Published {operation} operation for {entity_type} {entity_id} "
                 f"to stream {self.operations_stream} (message_id: {message_id})"
+            )
+            logger.debug(
+                f"[QUEUE] Message payload: {json.dumps(payload)[:200]}..."
             )
             return message_id
             
@@ -251,8 +254,93 @@ class BitrixQueueService:
             except Exception as e:
                 logger.debug(f"No pending messages to claim: {e}")
             
+            # First, read new messages that arrive after consumer group creation (prioritize new messages)
+            # Use ">" to read messages that haven't been delivered to any consumer in the group
+            # Skip if block_ms=0 (non-blocking) to avoid hanging
+            if block_ms > 0:
+                try:
+                    messages = await redis.xreadgroup(
+                        groupname=self.consumer_group,
+                        consumername=self.consumer_name,
+                        streams={stream_name: ">"},
+                        count=count,
+                        block=block_ms
+                    )
+                    
+                    result = []
+                    for stream, stream_messages in messages:
+                        for message_id, fields in stream_messages:
+                            try:
+                                # Parse payload if present
+                                if "payload" in fields:
+                                    fields["payload"] = json.loads(fields["payload"])
+                                if "data" in fields:
+                                    fields["data"] = json.loads(fields["data"])
+                                
+                                result.append({
+                                    "id": message_id,
+                                    "stream": stream,
+                                    **fields
+                                })
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing message {message_id}: {e}")
+                                # Acknowledge bad message to prevent reprocessing
+                                await self.acknowledge_message(stream_name, message_id)
+                    
+                    if result:
+                        logger.info(f"Read {len(result)} new messages from stream {stream_name}")
+                        return result
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # Some Redis errors are expected (timeout, no messages)
+                    if "timeout" in error_str or "no messages" in error_str or "empty" in error_str:
+                        logger.debug(f"No new messages from stream: {e}")
+                    else:
+                        logger.warning(f"Unexpected error reading new messages: {e}")
+            else:
+                # Non-blocking mode: try to read without blocking, but don't wait
+                try:
+                    messages = await redis.xreadgroup(
+                        groupname=self.consumer_group,
+                        consumername=self.consumer_name,
+                        streams={stream_name: ">"},
+                        count=count,
+                        block=1  # Use minimal block time (1ms) to avoid hanging
+                    )
+                    
+                    result = []
+                    for stream, stream_messages in messages:
+                        for message_id, fields in stream_messages:
+                            try:
+                                # Parse payload if present
+                                if "payload" in fields:
+                                    fields["payload"] = json.loads(fields["payload"])
+                                if "data" in fields:
+                                    fields["data"] = json.loads(fields["data"])
+                                
+                                result.append({
+                                    "id": message_id,
+                                    "stream": stream,
+                                    **fields
+                                })
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Error parsing message {message_id}: {e}")
+                                # Acknowledge bad message to prevent reprocessing
+                                await self.acknowledge_message(stream_name, message_id)
+                    
+                    if result:
+                        logger.info(f"Read {len(result)} new messages from stream {stream_name}")
+                        return result
+                except Exception as e:
+                    error_str = str(e).lower()
+                    # In non-blocking mode, it's expected to get no messages
+                    if "timeout" in error_str or "no messages" in error_str or "empty" in error_str:
+                        logger.debug(f"No new messages from stream (non-blocking): {e}")
+                    else:
+                        logger.debug(f"Non-blocking read returned: {e}")
+            
             # Then, try to read from beginning (0) to catch messages that existed
-            # before the consumer group was created
+            # before the consumer group was created (only if no new messages)
             try:
                 messages_from_start = await redis.xreadgroup(
                     groupname=self.consumer_group,
@@ -285,39 +373,11 @@ class BitrixQueueService:
                     logger.info(f"Read {len(result)} messages from beginning of stream {stream_name}")
                     return result
             except Exception as e:
-                # If reading from 0 fails (e.g., no messages), continue to read new messages
+                # If reading from 0 fails (e.g., no messages), that's okay
                 logger.debug(f"No messages from beginning of stream: {e}")
             
-            # Finally, read new messages that arrive after consumer group creation
-            messages = await redis.xreadgroup(
-                groupname=self.consumer_group,
-                consumername=self.consumer_name,
-                streams={stream_name: ">"},
-                count=count,
-                block=block_ms
-            )
-            
-            result = []
-            for stream, stream_messages in messages:
-                for message_id, fields in stream_messages:
-                    try:
-                        # Parse payload if present
-                        if "payload" in fields:
-                            fields["payload"] = json.loads(fields["payload"])
-                        if "data" in fields:
-                            fields["data"] = json.loads(fields["data"])
-                        
-                        result.append({
-                            "id": message_id,
-                            "stream": stream,
-                            **fields
-                        })
-                    except json.JSONDecodeError as e:
-                        logger.error(f"Error parsing message {message_id}: {e}")
-                        # Acknowledge bad message to prevent reprocessing
-                        await self.acknowledge_message(stream_name, message_id)
-            
-            return result
+            # No messages found
+            return []
             
         except Exception as e:
             logger.error(f"Error reading messages from Redis: {e}", exc_info=True)

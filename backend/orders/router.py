@@ -253,6 +253,14 @@ async def update_admin_order(
         await db.commit()
         await db.refresh(order)
         
+        # Queue Bitrix deal update if order has a Bitrix deal
+        if order.bitrix_deal_id:
+            try:
+                from backend.bitrix.sync_service import bitrix_sync_service
+                await bitrix_sync_service.queue_deal_update(db, order_id)
+            except Exception as e:
+                logger.warning(f"Failed to queue Bitrix deal update for order {order_id}: {e}")
+        
         logger.info(f"Admin {current_user.id} updated order {order_id} status to {order_update.status}")
         return schemas.MessageResponse(message="Order updated successfully")
     except HTTPException:
