@@ -23,6 +23,11 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
     #     raise ValueError("Dimensions are required for order creation")
     
     # Create order with calculator service integration
+    # Safely extract total_price_breakdown from calculator result (if present)
+    calc_total_price_breakdown = None
+    if isinstance(calc, dict) and 'total_price_breakdown' in calc:
+        calc_total_price_breakdown = calc.get('total_price_breakdown')
+
     db_order = models.Order(
         user_id=user_id,
         file_id=file_id,
@@ -55,8 +60,9 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         total_price=calc.get('total_price') if calc else None,
         total_time=calc.get('total_time') if calc else None,
         manufacturing_cycle=calc.get('manufacturing_cycle') if calc else None,
-        suitable_machines=json.dumps(calc.get('suitable_machines')) if calc and calc.get('suitable_machines') else None,
-        total_price_breakdown=json.dumps(calc.get('total_price_breakdown')) if calc and calc.get('total_price_breakdown') else None,
+        suitable_machines=json.dumps(calc.get('suitable_machines')) if calc and calc.get('suitable_machines') is not None else None,
+        # Store total_price_breakdown even if it's an empty dict/list; only skip when key is absent
+        total_price_breakdown=json.dumps(calc_total_price_breakdown) if calc_total_price_breakdown is not None else None,
         # Calculation type information
         calculation_type=calc.get('calculation_type') if calc else None,
         ml_model=calc.get('ml_model') if calc else None,
@@ -88,8 +94,19 @@ async def update_order_calc_fields(db: AsyncSession, order_id: int, calc: dict) 
     order.total_price = calc.get('total_price')
     order.total_time = calc.get('total_time')
     order.manufacturing_cycle = calc.get('manufacturing_cycle')
-    order.suitable_machines = json.dumps(calc.get('suitable_machines')) if calc.get('suitable_machines') else None
-    order.total_price_breakdown = json.dumps(calc.get('total_price_breakdown')) if calc.get('total_price_breakdown') else None
+
+    # Serialize suitable_machines if present; allow empty list
+    if 'suitable_machines' in calc:
+        suitable_machines_val = calc.get('suitable_machines')
+        order.suitable_machines = json.dumps(suitable_machines_val) if suitable_machines_val is not None else None
+
+    if 'total_price_breakdown' in calc:
+        total_price_breakdown_val = calc.get('total_price_breakdown')
+        order.total_price_breakdown = (
+            json.dumps(total_price_breakdown_val)
+            if total_price_breakdown_val is not None
+            else None
+        )
     # Update calculation type information
     order.calculation_type = calc.get('calculation_type')
     order.ml_model = calc.get('ml_model')

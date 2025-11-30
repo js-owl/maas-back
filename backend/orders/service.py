@@ -303,13 +303,13 @@ async def recalculate_order_price(db: AsyncSession, order: models.Order) -> bool
         
         if order.file_id:
             try:
-                # Get file data as base64
-                file_data = await get_file_data_as_base64(db, order.file_id)
                 
                 # Get file record for name and type
                 file_record = await get_file_by_id(db, order.file_id)
                 if file_record:
-                    file_name = file_record.file_name
+                    file_data = await get_file_data_as_base64(file_record)
+
+                    file_name = file_record.original_filename or file_record.filename
                     # Determine file type for calculator service
                     if file_name and file_name.lower().endswith('.stl'):
                         file_type = "stl"
