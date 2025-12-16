@@ -14,7 +14,7 @@ import io
 logger = logging.getLogger(__name__)
 
 class PreviewGenerator:
-    """3D model preview generation service using trimesh and pyvista"""
+    """3D model preview generation service using trimesh"""
     
     def __init__(self, preview_dir: str = None):
         if preview_dir is None:
@@ -142,11 +142,22 @@ class PreviewGenerator:
         try:
             import pyvista as pv
             import numpy as np
+            import os
+            
+            # Set environment variable to use OSMesa for headless rendering if available
+            # This prevents X server connection errors in Docker containers
+            os.environ['PYVISTA_OFF_SCREEN'] = 'true'
+            
+            # Try to use OSMesa backend if available
+            try:
+                pv.start_xvfb()  # Try to start virtual framebuffer
+            except:
+                pass  # If xvfb not available, continue anyway
             
             # Load mesh
             mesh = pv.read(str(model_path))
             
-            # Create plotter
+            # Create plotter with offscreen rendering
             plotter = pv.Plotter(off_screen=True, window_size=self.preview_size)
             plotter.add_mesh(mesh, show_edges=True, edge_color='black', line_width=0.5)
             
@@ -168,11 +179,12 @@ class PreviewGenerator:
         return False
     
     async def _generate_with_step_reader(self, model_path: Path, preview_path: Path) -> bool:
-        """Generate preview using CadQuery for STEP files (Approach B: STEP → STL → Pyvista)"""
+        """Generate preview using CadQuery for STEP files (Approach B: STEP → STL → Trimesh)"""
         try:
             import cadquery as cq
             from cadquery import importers, exporters
-            import pyvista as pv
+            import trimesh
+            import numpy as np
             import tempfile
             import os
             
@@ -192,27 +204,28 @@ class PreviewGenerator:
                     logger.warning(f"CadQuery STL export resulted in empty file for: {model_path}")
                     return False
                 
-                # Use pyvista to generate preview from STL
-                mesh = pv.read(temp_stl_path)
+                # Use trimesh to generate preview from STL (works headless, no display needed)
+                mesh = trimesh.load(temp_stl_path)
                 
                 # Check if mesh has geometry
-                if mesh.n_points == 0:
+                if mesh.vertices.size == 0:
                     logger.warning(f"Exported STL has no geometry for: {model_path}")
                     return False
                 
-                # Create plotter for headless rendering
-                plotter = pv.Plotter(off_screen=True, window_size=self.preview_size)
-                plotter.add_mesh(mesh, show_edges=True, edge_color='black', line_width=0.5)
+                # Create scene
+                scene = trimesh.Scene([mesh])
                 
                 # Set up camera
-                plotter.camera_position = 'iso'
-                plotter.camera.zoom(1.2)
+                scene.set_camera(angles=(0, 0, 0), distance=2.0)
                 
-                # Render and save
-                plotter.screenshot(str(preview_path))
-                plotter.close()
+                # Render scene to image
+                png = scene.save_image(resolution=self.preview_size)
                 
-                return preview_path.exists()
+                if png is not None:
+                    # Save image
+                    with open(preview_path, 'wb') as f:
+                        f.write(png)
+                    return True
                 
             finally:
                 # Clean up temporary STL file
@@ -220,7 +233,7 @@ class PreviewGenerator:
                     os.unlink(temp_stl_path)
             
         except ImportError:
-            logger.warning("CadQuery not available for STEP preview generation")
+            logger.warning("CadQuery or trimesh not available for STEP preview generation")
         except Exception as e:
             logger.warning(f"CadQuery preview generation error: {e}")
         

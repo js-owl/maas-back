@@ -118,6 +118,9 @@ class BitrixQueueService:
         """
         Publish webhook event to Redis Stream
         
+        Ensures consumer group exists for resilience during backend outages.
+        Webhook messages are persisted in Redis and processed asynchronously.
+        
         Args:
             event_type: Event type (e.g., 'deal_updated', 'contact_updated')
             entity_type: 'deal', 'contact', or 'lead'
@@ -129,6 +132,9 @@ class BitrixQueueService:
         """
         try:
             redis = await self._get_redis()
+            
+            # Ensure consumer group exists for webhook stream (for resilience)
+            await self._ensure_consumer_group(self.webhooks_stream)
             
             message_data = {
                 "event_type": event_type,
@@ -151,6 +157,8 @@ class BitrixQueueService:
             
         except Exception as e:
             logger.error(f"Error publishing webhook to Redis: {e}", exc_info=True)
+            # Return None to indicate failure, but webhook endpoint will still return 200
+            # to prevent Bitrix retries (messages will be lost but that's acceptable for webhooks)
             return None
     
     async def get_pending_messages(

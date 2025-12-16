@@ -78,10 +78,15 @@ RUN if [ -n "$APT_PROXY" ]; then \
     fi
 
 # Install only runtime dependencies (no build tools) with APT cache mounts
+# Use Pandoc + texlive-xetex for DOCX to PDF conversion with Unicode support (lighter than LibreOffice)
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     --mount=type=cache,target=/var/lib/apt/lists,sharing=locked \
     apt-get update && apt-get install -y \
     curl \
+    pandoc \
+    texlive-xetex \
+    texlive-fonts-recommended \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy installed Python packages from builder stage

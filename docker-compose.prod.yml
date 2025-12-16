@@ -83,7 +83,7 @@ services:
         max_attempts: 3
 
   redis:
-    image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:8443}/maas-hosted/redis:8.2.3
+    image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:443}/maas-hosted/redis:8.2.3
     container_name: redis
     volumes:
       - ./redis-data:/data

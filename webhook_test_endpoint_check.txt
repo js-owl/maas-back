@@ -1,0 +1,27 @@
+================================================================================
+WEBHOOK TEST ENDPOINT CHECK
+================================================================================
+Time: 2025-12-01T13:06:08.571752
+
+Total mentions: 9
+Full log blocks: 1
+
+
+All Requests/Mentions:
+Line 30530: INFO:backend.core.middleware:INCOMING REQUEST - Method: POST, Path: /bitrix/webhook/test, Query: test=test2&entity_id=65, Client IP: 127.0.0.1, Forwarded-Proto: N/A, Forwarded-Host: N/A, User-Agent: curl/8.14.1
+Line 30530: INFO:backend.core.middleware:INCOMING REQUEST - Method: POST, Path: /bitrix/webhook/test, Query: test=test2&entity_id=65, Client IP: 127.0.0.1, Forwarded-Proto: N/A, Forwarded-Host: N/A, User-Agent: curl/8.14.1
+Line 30530: INFO:backend.core.middleware:INCOMING REQUEST - Method: POST, Path: /bitrix/webhook/test, Query: test=test2&entity_id=65, Client IP: 127.0.0.1, Forwarded-Proto: N/A, Forwarded-Host: N/A, User-Agent: curl/8.14.1
+Line 30536: URL: http://localhost:8000/bitrix/webhook/test?test=test2&entity_id=65
+Line 30537: Path: /bitrix/webhook/test
+Line 30555: INFO:backend.core.middleware:REQUEST COMPLETE - Method: POST, Path: /bitrix/webhook/test, Status: 200, Duration: 8.10ms
+Line 30555: INFO:backend.core.middleware:REQUEST COMPLETE - Method: POST, Path: /bitrix/webhook/test, Status: 200, Duration: 8.10ms
+Line 30556: INFO:     127.0.0.1:38286 - "POST /bitrix/webhook/test?test=test2&entity_id=65 HTTP/1.1" 200 OK
+Line 30556: INFO:     127.0.0.1:38286 - "POST /bitrix/webhook/test?test=test2&entity_id=65 HTTP/1.1" 200 OK
+
+
+Full Test Endpoint Log Blocks:
+
+Block starting at line 30533:
+BITRIX WEBHOOK TEST ENDPOINT - FULL REQUEST DETAILS
+================================================================================
+================================================================================

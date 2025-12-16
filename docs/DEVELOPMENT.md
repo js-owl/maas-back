@@ -265,7 +265,7 @@ class BitrixSyncQueue(Base):
 
 **Supported Formats**:
 - **STL Files** - Direct processing with trimesh
-- **STP/STEP Files** - CadQuery → STL → Pyvista pipeline
+- **STP/STEP Files** - CadQuery → STL → Trimesh pipeline
 
 **Preview Pipeline**:
 ```python

@@ -211,6 +211,52 @@ class BitrixWorker:
                     )
                     await db.commit()
                     logger.info(f"Created Bitrix deal {deal_id} for order {order_id}")
+                    
+                    # Attach file if available
+                    if order.file_id:
+                        from backend.files.service import get_file_by_id
+                        from pathlib import Path
+                        
+                        file_record = await get_file_by_id(db, order.file_id)
+                        if file_record and file_record.file_path:
+                            file_path = Path(file_record.file_path)
+                            if file_path.exists():
+                                logger.info(f"Attaching file to deal {deal_id} for order {order_id}")
+                                file_attached = await bitrix_client.attach_file_to_deal(
+                                    deal_id,
+                                    str(file_path),
+                                    file_record.original_filename or file_record.filename
+                                )
+                                if file_attached:
+                                    logger.info(f"File attached to deal {deal_id} for order {order_id}")
+                                else:
+                                    logger.warning(f"Failed to attach file to deal {deal_id} for order {order_id}")
+                            else:
+                                logger.warning(f"File path does not exist: {file_path} for order {order_id}")
+                        else:
+                            logger.warning(f"File record not found for file_id {order.file_id} for order {order_id}")
+                    
+                    # Attach documents if available
+                    if payload.get("document_ids"):
+                        from backend.documents.service import get_documents_by_ids
+                        from pathlib import Path
+                        
+                        documents = await get_documents_by_ids(db, payload["document_ids"])
+                        for doc in documents:
+                            if doc and doc.document_path:
+                                doc_path = Path(doc.document_path)
+                                if doc_path.exists():
+                                    logger.info(f"Attaching document to deal {deal_id} for order {order_id}")
+                                    doc_attached = await bitrix_client.attach_file_to_deal(
+                                        deal_id,
+                                        str(doc_path),
+                                        doc.original_filename or doc.document_name
+                                    )
+                                    if doc_attached:
+                                        logger.info(f"Document attached to deal {deal_id} for order {order_id}")
+                                    else:
+                                        logger.warning(f"Failed to attach document to deal {deal_id} for order {order_id}")
+                    
                     return True
                 else:
                     logger.error(f"Failed to create Bitrix deal for order {order_id}")
@@ -592,8 +638,25 @@ class BitrixWorker:
         deal_id: int,
         data: Dict[str, Any]
     ) -> bool:
-        """Handle deal updated webhook"""
+        """Handle deal updated webhook with comprehensive data capture"""
         try:
+            # Filter: Only process deals in MaaS funnel
+            category_id = data.get("CATEGORY_ID") or data.get("category_id")
+            if category_id:
+                try:
+                    category_id = int(category_id)
+                    from backend.bitrix.funnel_manager import funnel_manager
+                    maas_category_id = funnel_manager.get_category_id()
+                    
+                    if maas_category_id and category_id != maas_category_id:
+                        logger.debug(
+                            f"Skipping deal {deal_id} update: "
+                            f"Category {category_id} is not MaaS funnel (category {maas_category_id})"
+                        )
+                        return True  # Not an error, just not our funnel
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid CATEGORY_ID in webhook data: {category_id}")
+            
             # Find order by bitrix_deal_id
             order_result = await db.execute(
                 select(models.Order).where(models.Order.bitrix_deal_id == deal_id)
@@ -604,32 +667,76 @@ class BitrixWorker:
                 logger.warning(f"No order found for Bitrix deal {deal_id}")
                 return True  # Not an error, just no matching order
             
+            # Extract comprehensive deal data
+            old_stage_id = data.get("OLD_STAGE_ID") or data.get("old_stage_id")
+            new_stage_id = data.get("STAGE_ID") or data.get("stage_id")
+            deal_amount = data.get("OPPORTUNITY") or data.get("opportunity")
+            contact_id = data.get("CONTACT_ID") or data.get("contact_id")
+            deal_title = data.get("TITLE") or data.get("title")
+            currency_id = data.get("CURRENCY_ID") or data.get("currency_id", "RUB")
+            
+            # Log comprehensive change information
+            logger.info(
+                f"[WEBHOOK] Deal {deal_id} updated for order {order.order_id}: "
+                f"stage {old_stage_id} -> {new_stage_id}, "
+                f"amount={deal_amount}, contact={contact_id}, title={deal_title}"
+            )
+            
+            # Track what changed
+            changes = []
+            
             # Update order status based on deal stage if needed
-            stage_id = data.get("STAGE_ID")
-            if stage_id:
+            if new_stage_id:
                 from backend.bitrix.funnel_manager import funnel_manager
                 
                 # Map Bitrix stage ID to order status (only if funnel manager is initialized)
                 mapped_status = None
                 if funnel_manager.is_initialized():
-                    mapped_status = funnel_manager.get_status_for_stage_id(stage_id)
+                    mapped_status = funnel_manager.get_status_for_stage_id(new_stage_id)
                 
-                if mapped_status:
+                if mapped_status and mapped_status != order.status:
                     # Update order status
                     old_status = order.status
                     order.status = mapped_status
-                    await db.commit()
-                    await db.refresh(order)
+                    changes.append(f"status: {old_status} -> {mapped_status}")
                     logger.info(
-                        f"Updated order {order.order_id} status from '{old_status}' to '{mapped_status}' "
-                        f"based on Bitrix deal {deal_id} stage '{stage_id}'"
+                        f"[WEBHOOK] Updated order {order.order_id} status from '{old_status}' to '{mapped_status}' "
+                        f"based on Bitrix deal {deal_id} stage '{new_stage_id}' (old stage: {old_stage_id})"
                     )
-                else:
+                elif not mapped_status:
                     # Unmapped stage - log warning and leave order status unchanged
                     logger.warning(
-                        f"Deal {deal_id} stage '{stage_id}' does not map to any order status. "
+                        f"[WEBHOOK] Deal {deal_id} stage '{new_stage_id}' does not map to any order status. "
                         f"Order {order.order_id} status remains '{order.status}'"
                     )
+            
+            # Update order total_price if deal amount changed
+            if deal_amount is not None:
+                try:
+                    new_amount = float(deal_amount)
+                    if order.total_price != new_amount:
+                        old_amount = order.total_price
+                        order.total_price = new_amount
+                        changes.append(f"total_price: {old_amount} -> {new_amount}")
+                        logger.info(
+                            f"[WEBHOOK] Updated order {order.order_id} total_price from {old_amount} to {new_amount} "
+                            f"based on Bitrix deal {deal_id}"
+                        )
+                except (ValueError, TypeError):
+                    logger.warning(f"[WEBHOOK] Invalid deal amount in webhook: {deal_amount}")
+            
+            # Commit changes if any
+            if changes:
+                await db.commit()
+                await db.refresh(order)
+                logger.info(
+                    f"[WEBHOOK] Deal {deal_id} webhook processed successfully for order {order.order_id}. "
+                    f"Changes: {', '.join(changes)}"
+                )
+            else:
+                logger.debug(
+                    f"[WEBHOOK] Deal {deal_id} webhook processed, no order changes needed"
+                )
             
             return True
         except Exception as e:
@@ -713,26 +820,79 @@ class BitrixWorker:
                 logger.warning(f"Invoice {invoice_id} found but no download URL available (old API)")
                 return False
             
-            # Get download URL (prefer DOCX, fallback to PDF)
+            # Get download URL - try PDF URLs first, fallback to DOCX on 400 error
             download_url = None
             file_extension = "docx"
             
-            if document_info.get("downloadUrl"):
-                download_url = document_info.get("downloadUrl")
-                file_extension = "docx"
-            elif document_info.get("pdfUrl"):
-                download_url = document_info.get("pdfUrl")
-                file_extension = "pdf"
-            elif document_info.get("downloadUrlMachine"):
-                download_url = document_info.get("downloadUrlMachine")
-                file_extension = "docx"
-            elif document_info.get("pdfUrlMachine"):
-                download_url = document_info.get("pdfUrlMachine")
-                file_extension = "pdf"
+            # Priority order for download URLs:
+            # 1. pdfUrlMachine - REST API URL for PDF (try first, catch 400 → fallback)
+            # 2. pdfUrl - AJAX endpoint for PDF (try second, catch 400 → fallback)
+            # 3. downloadUrlMachine - REST API URL with token (DOCX fallback)
+            # 4. downloadUrl - AJAX endpoint (DOCX fallback)
+            # Note: publicUrl returns HTML redirect page, not the actual document, so we skip it
             
-            if not download_url:
-                logger.warning(f"No download URL found for invoice {invoice_id}")
-                return False
+            # Try PDF URLs first
+            pdf_urls = [
+                ("pdfUrlMachine", "REST API PDF"),
+                ("pdfUrl", "AJAX PDF")
+            ]
+            
+            pdf_download_success = False
+            response = None
+            import os
+            verify_tls = os.getenv("BITRIX_VERIFY_TLS", "true").lower() != "false"
+            
+            for url_key, url_type in pdf_urls:
+                if document_info.get(url_key):
+                    test_url = document_info.get(url_key)
+                    logger.info(f"Trying {url_type} for invoice {invoice_id}")
+                    
+                    # Try to download PDF to test if it works
+                    try:
+                        async with httpx.AsyncClient(timeout=30.0, verify=verify_tls, follow_redirects=True) as client:
+                            test_response = await client.get(test_url)
+                            test_response.raise_for_status()
+                            # Success - PDF URL works, use it
+                            download_url = test_url
+                            file_extension = "pdf"
+                            pdf_download_success = True
+                            response = test_response  # Reuse the response to avoid double download
+                            logger.info(f"PDF URL ({url_type}) works, downloaded PDF for invoice {invoice_id}")
+                            break
+                    except httpx.HTTPStatusError as e:
+                        if e.response.status_code == 400:
+                            logger.warning(f"PDF URL ({url_type}) returned 400 error for invoice {invoice_id}, trying next URL")
+                            continue
+                        else:
+                            # Other HTTP errors - log and try next
+                            logger.warning(f"PDF URL ({url_type}) returned {e.response.status_code} for invoice {invoice_id}, trying next URL")
+                            continue
+                    except Exception as e:
+                        logger.warning(f"Error testing PDF URL ({url_type}): {e}, trying next URL")
+                        continue
+            
+            # If PDF failed or not available, try DOCX URLs
+            if not pdf_download_success:
+                docx_urls = [
+                    ("downloadUrlMachine", "REST API DOCX"),
+                    ("downloadUrl", "AJAX DOCX")
+                ]
+                
+                for url_key, url_type in docx_urls:
+                    if document_info.get(url_key):
+                        download_url = document_info.get(url_key)
+                        file_extension = "docx"
+                        logger.info(f"Using {url_type} fallback for invoice {invoice_id}")
+                        break
+                
+                if not download_url:
+                    logger.warning(f"No download URL found for invoice {invoice_id}")
+                    return False
+                
+                # Download DOCX file
+                async with httpx.AsyncClient(timeout=30.0, verify=verify_tls, follow_redirects=True) as client:
+                    response = await client.get(download_url)
+                    response.raise_for_status()
             
             # Get entity ID (deal ID) to find associated order
             entity_id = document_info.get("entityId")
@@ -755,15 +915,18 @@ class BitrixWorker:
                 logger.warning(f"No order found for Bitrix deal {deal_id} (invoice {invoice_id})")
                 return True  # Not an error, just no matching order
             
-            # Download invoice file
+            # Download invoice file (if not already downloaded for PDF)
             invoice_dir = Path("uploads/invoices")
             invoice_dir.mkdir(parents=True, exist_ok=True)
             
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                response = await client.get(download_url)
-                response.raise_for_status()
-                
-                # Save original file (DOCX or PDF)
+            if not response:  # Only download if we haven't already (PDF case)
+                import os
+                verify_tls = os.getenv("BITRIX_VERIFY_TLS", "true").lower() != "false"
+                async with httpx.AsyncClient(timeout=30.0, verify=verify_tls, follow_redirects=True) as client:
+                    response = await client.get(download_url)
+                    response.raise_for_status()
+            
+            # Save original file (DOCX or PDF)
                 original_filename = f"invoice_order_{order.order_id}_deal_{deal_id}.{file_extension}"
                 original_path = invoice_dir / original_filename
                 
@@ -772,6 +935,35 @@ class BitrixWorker:
                 
                 logger.info(f"Downloaded invoice {invoice_id} to {original_path}")
                 
+                # Validate downloaded file - check if it's actually a DOCX (ZIP file) or HTML
+                if file_extension == "docx":
+                    import zipfile
+                    try:
+                        # Check if file is a valid ZIP (DOCX files are ZIP archives)
+                        with zipfile.ZipFile(original_path, 'r') as zip_file:
+                            # Check for required DOCX files
+                            if 'word/document.xml' not in zip_file.namelist():
+                                logger.warning(f"Downloaded file is not a valid DOCX (missing word/document.xml), checking if HTML")
+                                # Check if it's HTML instead
+                                with open(original_path, 'rb') as f:
+                                    content_start = f.read(100)
+                                    if b'<!DOCTYPE html' in content_start or b'<html' in content_start:
+                                        logger.error(f"Downloaded file is HTML, not DOCX. URL may be incorrect or document not available.")
+                                        return False
+                                    else:
+                                        logger.warning(f"Downloaded file is not a valid DOCX format")
+                                        return False
+                    except zipfile.BadZipFile:
+                        # Check if it's HTML
+                        with open(original_path, 'rb') as f:
+                            content_start = f.read(100)
+                            if b'<!DOCTYPE html' in content_start or b'<html' in content_start:
+                                logger.error(f"Downloaded file is HTML, not DOCX. URL may be incorrect or document not available.")
+                                return False
+                            else:
+                                logger.error(f"Downloaded file is not a valid DOCX (not a ZIP file)")
+                                return False
+                
                 # Convert DOCX to PDF if needed
                 pdf_path = None
                 if file_extension == "docx":
@@ -779,37 +971,105 @@ class BitrixWorker:
                     pdf_path = invoice_dir / pdf_filename
                     
                     try:
-                        # Try to convert DOCX to PDF using docx2pdf
-                        # This requires LibreOffice or Microsoft Word to be installed
-                        from docx2pdf import convert
-                        convert(str(original_path), str(pdf_path))
-                        logger.info(f"Converted DOCX to PDF: {pdf_path}")
-                    except ImportError:
-                        logger.warning("docx2pdf not available, keeping DOCX file only")
+                        # Use Pandoc with wkhtmltopdf engine for DOCX to PDF conversion
+                        import subprocess
+                        # Use XeLaTeX engine for Unicode support (Russian Cyrillic characters)
+                        result = subprocess.run(
+                            [
+                                "pandoc",
+                                str(original_path),
+                                "-o", str(pdf_path),
+                                "--pdf-engine=xelatex",
+                                "-V", "mainfont=DejaVu Sans"
+                            ],
+                            capture_output=True,
+                            text=True,
+                            timeout=60
+                        )
+                        
+                        if result.returncode == 0 and pdf_path.exists():
+                            logger.info(f"Converted DOCX to PDF: {pdf_path}")
+                        else:
+                            logger.warning(f"Pandoc conversion failed: {result.stderr}, keeping DOCX file only")
+                            pdf_path = None
+                    except FileNotFoundError:
+                        logger.warning("Pandoc not found, keeping DOCX file only")
+                        pdf_path = None
+                    except subprocess.TimeoutExpired:
+                        logger.warning("Pandoc conversion timed out, keeping DOCX file only")
                         pdf_path = None
                     except Exception as e:
-                        logger.warning(f"Failed to convert DOCX to PDF: {e}, keeping DOCX file only")
+                        logger.error(f"Failed to convert DOCX to PDF: {e}, keeping DOCX file only", exc_info=True)
                         pdf_path = None
                 else:
                     # Already PDF
                     pdf_path = original_path
                 
-                # Update order with invoice info
-                await db.execute(
-                    update(models.Order)
-                    .where(models.Order.order_id == order.order_id)
-                    .values(
-                        invoice_url=download_url,
-                        invoice_file_path=str(pdf_path) if pdf_path else str(original_path),
-                        invoice_generated_at=datetime.now(timezone.utc)
-                    )
-                )
-                await db.commit()
+                # Create document record and attach to order
+                from backend.invoices.service import create_invoice_from_file_path
+                final_path = pdf_path if pdf_path else original_path
                 
-                logger.info(
-                    f"Updated order {order.order_id} with invoice: "
-                    f"PDF={pdf_path}, Original={original_path}"
+                # Parse generated_at from document_info if available
+                generated_at = None
+                if document_info.get("createTime"):
+                    try:
+                        generated_at = datetime.fromisoformat(document_info["createTime"].replace("Z", "+00:00"))
+                    except:
+                        pass
+                
+                # Create invoice record and attach to order
+                invoice = await create_invoice_from_file_path(
+                    db=db,
+                    file_path=str(final_path),
+                    order_id=order.order_id,
+                    bitrix_document_id=document_id,
+                    generated_at=generated_at,
+                    original_filename=f"invoice_order_{order.order_id}.pdf" if pdf_path else f"invoice_order_{order.order_id}.{file_extension}"
                 )
+                
+                if invoice:
+                    # Update order's invoice_ids
+                    import json
+                    current_invoice_ids = []
+                    if order.invoice_ids:
+                        try:
+                            current_invoice_ids = json.loads(order.invoice_ids) if isinstance(order.invoice_ids, str) else order.invoice_ids
+                        except (json.JSONDecodeError, TypeError):
+                            current_invoice_ids = []
+                    
+                    if invoice.id not in current_invoice_ids:
+                        current_invoice_ids.append(invoice.id)
+                    
+                    # Update order with invoice info
+                    await db.execute(
+                        update(models.Order)
+                        .where(models.Order.order_id == order.order_id)
+                        .values(
+                            invoice_ids=json.dumps(current_invoice_ids),
+                            invoice_url=download_url,
+                            invoice_file_path=str(final_path),
+                            invoice_generated_at=generated_at or datetime.now(timezone.utc)
+                        )
+                    )
+                    await db.commit()
+                    
+                    logger.info(
+                        f"Updated order {order.order_id} with invoice {invoice.id}: "
+                        f"PDF={pdf_path}, Original={original_path}"
+                    )
+                else:
+                    # Fallback: update legacy fields if invoice creation failed
+                    await db.execute(
+                        update(models.Order)
+                        .where(models.Order.order_id == order.order_id)
+                        .values(
+                            invoice_url=download_url,
+                            invoice_file_path=str(final_path),
+                            invoice_generated_at=generated_at or datetime.now(timezone.utc)
+                        )
+                    )
+                    await db.commit()
+                    logger.warning(f"Failed to create invoice, updated legacy fields only")
                 
                 return True
                 
@@ -912,8 +1172,16 @@ class BitrixWorker:
                                         bitrix_queue_service.webhooks_stream,
                                         message["id"]
                                     )
+                                    logger.debug(f"Webhook {message.get('id')} processed and acknowledged")
+                                else:
+                                    # Webhook processing failed - will be retried via claim mechanism
+                                    logger.warning(
+                                        f"Webhook {message.get('id')} processing failed, "
+                                        f"will be retried via claim mechanism"
+                                    )
                             except Exception as e:
                                 logger.error(f"Error processing webhook {message.get('id')}: {e}", exc_info=True)
+                                # Message will remain pending and be retried
                     
                     # Claim and retry pending messages periodically
                     await self._retry_pending_messages()

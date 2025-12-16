@@ -42,7 +42,7 @@ class BitrixClient:
             async with httpx.AsyncClient(timeout=self.timeout_seconds, verify=self.verify_tls) as client:
                 # Use JSON for methods that expect objects (like crm.deal.add, crm.item.update with fields, disk.folder.uploadfile, userfield.add)
                 # Use form data for others
-                if method.endswith(".userfield.add") or (method in ["crm.deal.add", "crm.deal.update", "crm.item.update", "disk.folder.uploadfile"] and ("fields" in data or "entityTypeId" in data or "data" in data)):
+                if method.endswith(".userfield.add") or (method in ["crm.deal.add", "crm.deal.update", "crm.item.update", "disk.folder.uploadfile", "crm.documentgenerator.document.list"] and ("fields" in data or "entityTypeId" in data or "data" in data or "filter" in str(data))):
                     resp = await client.post(url, json=data)
                 else:
                     resp = await client.post(url, data=data)
@@ -478,6 +478,42 @@ class BitrixClient:
         payload = {"id": document_id}
         resp = await self._post("crm.documentgenerator.document.get", payload)
         return resp.get("result", {}).get("document") if resp else None
+    
+    async def enable_document_public_url(self, document_id: int, enable: bool = True) -> bool:
+        """Enable or disable public URL for a document generator document"""
+        try:
+            payload = {
+                "id": str(document_id),
+                "status": 1 if enable else 0
+            }
+            resp = await self._post("crm.documentgenerator.document.enablepublicurl", payload)
+            if resp and resp.get("result"):
+                return True
+            return False
+        except Exception as e:
+            logger.error(f"Error enabling public URL for document {document_id}: {e}", exc_info=True)
+            return False
+    
+    async def list_document_generator_documents(self, deal_id: int) -> Optional[List[Dict[str, Any]]]:
+        """List all document generator documents for a deal"""
+        try:
+            # Filter for documents associated with the deal
+            # entityTypeId=2 means deals in Bitrix
+            # Bitrix document generator API expects filter as nested object for JSON
+            payload = {
+                "filter": {
+                    "entityTypeId": 2,  # Deals
+                    "entityId": deal_id
+                }
+            }
+            resp = await self._post("crm.documentgenerator.document.list", payload)
+            if resp and resp.get("result"):
+                documents = resp.get("result", {}).get("documents", [])
+                return documents if isinstance(documents, list) else []
+            return []
+        except Exception as e:
+            logger.error(f"Error listing document generator documents for deal {deal_id}: {e}", exc_info=True)
+            return None
     
     async def create_contact(self, user_data: Dict[str, Any]) -> Optional[int]:
         """Create contact in Bitrix"""

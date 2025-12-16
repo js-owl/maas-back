@@ -1,0 +1,17 @@
+================================================================================
+ALL WEBHOOK ACTIVITY CHECK
+================================================================================
+Timestamp: 2025-12-01T10:35:19.354997
+
+Total webhook calls: 3
+Errors: 1
+Successful: 0
+
+
+All Webhook Calls:
+Line 86: INFO:backend.core.middleware:INCOMING REQUEST - Method: POST, Path: /bitrix/webhook, Query: test=test2, Client IP: 172.21.0.1, Forwarded-Proto: N/A, Forwarded-Host: N/A, User-Agent: python-requests/2.32.5
+Line 88: INFO:backend.core.middleware:REQUEST COMPLETE - Method: POST, Path: /bitrix/webhook, Status: 400, Duration: 3.08ms
+Line 89: INFO:     172.21.0.1:49418 - "POST /bitrix/webhook?test=test2 HTTP/1.1" 400 Bad Request
+
+Errors:
+Line 87: ERROR:backend.core.error_handlers:HTTP Exception: 400 - Missing entity_id

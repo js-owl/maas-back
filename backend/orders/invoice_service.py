@@ -69,26 +69,75 @@ class InvoiceService:
             return False
     
     async def _get_invoice_url_from_bitrix(self, deal_id: int) -> Optional[str]:
-        """Get invoice URL from Bitrix deal"""
+        """Get invoice URL from Bitrix deal using document generator API"""
         try:
             if not bitrix_client.is_configured():
                 logger.warning("[INVOICE_URL] Bitrix not configured")
                 return None
             
-            # Get deal with files
-            deal_data = await bitrix_client.get_deal(deal_id)
-            if not deal_data:
-                logger.warning(f"[INVOICE_URL] Deal {deal_id} not found in Bitrix")
+            # List document generator documents for this deal
+            documents = await bitrix_client.list_document_generator_documents(deal_id)
+            if not documents:
+                logger.debug(f"[INVOICE_URL] No document generator documents found for deal {deal_id}")
                 return None
             
-            # Look for invoice files in deal attachments
-            # This would need to be implemented based on Bitrix file attachment API
-            # For now, return None as placeholder
-            logger.info(f"[INVOICE_URL] Checking for invoice files in deal {deal_id}")
-            return None
+            # Find invoice documents (typically documents with "invoice" in name or type)
+            invoice_document = None
+            for doc in documents:
+                doc_name = (doc.get("title") or doc.get("name") or "").lower()
+                doc_type = (doc.get("type") or doc.get("templateName") or "").lower()
+                
+                # Check if this looks like an invoice
+                if "invoice" in doc_name or "invoice" in doc_type or "счет" in doc_name:
+                    invoice_document = doc
+                    break
+            
+            # If no invoice found by name, use the most recent document
+            if not invoice_document and documents:
+                documents_sorted = sorted(
+                    documents,
+                    key=lambda x: x.get("createTime", "") or x.get("dateCreate", ""),
+                    reverse=True
+                )
+                invoice_document = documents_sorted[0]
+                logger.info(f"[INVOICE_URL] Using most recent document as invoice for deal {deal_id}")
+            
+            if not invoice_document:
+                logger.debug(f"[INVOICE_URL] No suitable invoice document found for deal {deal_id}")
+                return None
+            
+            # Get document ID
+            document_id = invoice_document.get("id") or invoice_document.get("documentId")
+            if not document_id:
+                logger.warning(f"[INVOICE_URL] No document ID found in invoice document for deal {deal_id}")
+                return None
+            
+            # Get full document details
+            document_info = await bitrix_client.get_document_generator_document(document_id)
+            if not document_info:
+                logger.warning(f"[INVOICE_URL] Could not get document details for document {document_id}")
+                return None
+            
+            # Get download URL (prefer PDF, fallback to DOCX)
+            download_url = None
+            if document_info.get("pdfUrl"):
+                download_url = document_info.get("pdfUrl")
+            elif document_info.get("downloadUrl"):
+                download_url = document_info.get("downloadUrl")
+            elif document_info.get("pdfUrlMachine"):
+                download_url = document_info.get("pdfUrlMachine")
+            elif document_info.get("downloadUrlMachine"):
+                download_url = document_info.get("downloadUrlMachine")
+            
+            if download_url:
+                logger.info(f"[INVOICE_URL] Found invoice URL for deal {deal_id}: {download_url}")
+                return download_url
+            else:
+                logger.warning(f"[INVOICE_URL] No download URL found for document {document_id}")
+                return None
             
         except Exception as e:
-            logger.error(f"[INVOICE_URL] Error getting invoice URL from Bitrix: {e}")
+            logger.error(f"[INVOICE_URL] Error getting invoice URL from Bitrix: {e}", exc_info=True)
             return None
     
     async def _download_invoice_from_bitrix(

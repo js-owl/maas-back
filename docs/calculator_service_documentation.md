@@ -78,7 +78,8 @@ Unified endpoint for all manufacturing calculations including:
   "cover_id": ["1"],
   "k_otk": 1.0,
   "k_cert": ["a", "f"],
-  "n_dimensions": 1
+  "n_dimensions": 1,
+  "location": "location_1"
 }
 ```
 

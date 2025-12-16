@@ -1,0 +1,49 @@
+================================================================================
+CLEANUP ORDER 41 DUPLICATE DEALS
+Run at: 2025-11-27 10:59:12.796559
+================================================================================
+
+📋 Order 41 Details:
+   Order ID: 41
+   Bitrix Deal ID (stored in DB): 65
+   Status: pending
+   Created: 2025-11-27 07:27:52.177172
+   Updated: 2025-11-27 07:28:04.133376
+   ⚠️  Order was updated 12 seconds after creation
+
+🔍 Searching for all deals with 'Order #41' in title...
+
+   ✅ Found 2 deal(s):
+
+   Deal 1:
+     ID: 65
+     Title: Order #41 - cnc-milling
+     Created: 2025-11-27T07:28:06+00:00
+     Category ID: 1
+     Stage ID: C1:PREPAYMENT_INVOICE
+     ✓ This is the deal stored in database (KEEP)
+
+   Deal 2:
+     ID: 64
+     Title: Order #41 - cnc-milling
+     Created: 2025-11-27T07:28:04+00:00
+     Category ID: 1
+     Stage ID: C1:NEW
+     ⚠️  DUPLICATE - not stored in database (DELETE)
+
+🗑️  Found 1 duplicate deal(s) to delete:
+   - Deal 64
+
+⚠️  WARNING: This will delete 1 deal(s) from Bitrix!
+   Proceeding with deletion...
+   ✅ Deleted deal 64: Order #41 - cnc-milling
+
+================================================================================
+SUMMARY
+================================================================================
+   Total deals found: 2
+   Duplicates deleted: 1
+   Failed deletions: 0
+   Deal kept (stored in DB): 65
+
+✅ Successfully cleaned up 1 duplicate deal(s)!

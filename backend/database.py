@@ -3,12 +3,15 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 from backend.models import Base, User, FileStorage
 from backend.auth.service import get_password_hash
+from backend.utils.logging import get_logger
 import asyncio
 import os
 from pathlib import Path
 import shutil
 from datetime import datetime, timezone
 import json
+
+logger = get_logger(__name__)
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/shop.db")
 
@@ -109,9 +112,16 @@ async def ensure_order_new_columns() -> None:
             if 'detail_time' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN detail_time REAL")
             if 'total_price_breakdown' not in order_cols:
-                order_alters.append(text("ALTER TABLE orders ADD COLUMN total_price_breakdown TEXT"))
+                order_alters.append("ALTER TABLE orders ADD COLUMN total_price_breakdown TEXT")
+            if 'invoice_ids' not in order_cols:
+                order_alters.append("ALTER TABLE orders ADD COLUMN invoice_ids TEXT")
+            if 'location' not in order_cols:
+                order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
             for stmt in order_alters:
-                await session.execute(stmt)
+                if isinstance(stmt, str):
+                    await session.execute(text(stmt))
+                else:
+                    await session.execute(stmt)
             if order_alters:
                 await session.commit()
                 # Backfill newly added identifier columns to "1" for consistency
@@ -178,6 +188,60 @@ async def ensure_order_new_columns() -> None:
         except Exception:
             # Best-effort; avoid blocking startup if this fails
             await session.rollback()
+
+
+async def ensure_invoices_table() -> None:
+    """Ensure invoices table exists and has all required columns"""
+    async with AsyncSessionLocal() as session:
+        try:
+            # Check if invoices table exists
+            result = await session.execute(text("SELECT name FROM sqlite_master WHERE type='table' AND name='invoices'"))
+            table_exists = result.first() is not None
+            
+            if not table_exists:
+                # Create invoices table using SQLAlchemy metadata
+                from backend.models import InvoiceStorage
+                async with engine.begin() as conn:
+                    await conn.run_sync(InvoiceStorage.__table__.create)
+                logger.info("Created invoices table")
+            else:
+                # Check if all columns exist
+                result = await session.execute(text("PRAGMA table_info('invoices')"))
+                invoice_cols = {row[1] for row in result}
+                invoice_alters = []
+                
+                required_columns = {
+                    'id': 'INTEGER PRIMARY KEY',
+                    'filename': 'VARCHAR',
+                    'original_filename': 'VARCHAR',
+                    'file_path': 'VARCHAR',
+                    'file_size': 'INTEGER',
+                    'file_type': 'VARCHAR',
+                    'order_id': 'INTEGER',
+                    'bitrix_document_id': 'INTEGER',
+                    'generated_at': 'DATETIME',
+                    'created_at': 'DATETIME',
+                    'updated_at': 'DATETIME'
+                }
+                
+                for col_name, col_type in required_columns.items():
+                    if col_name not in invoice_cols:
+                        if col_name == 'id':
+                            continue  # Skip primary key
+                        alter_stmt = f"ALTER TABLE invoices ADD COLUMN {col_name} {col_type}"
+                        if col_name == 'order_id':
+                            alter_stmt += " NOT NULL"
+                        invoice_alters.append(alter_stmt)
+                
+                for stmt in invoice_alters:
+                    await session.execute(text(stmt))
+                
+                if invoice_alters:
+                    await session.commit()
+                    logger.info(f"Added {len(invoice_alters)} columns to invoices table")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error ensuring invoices table: {e}", exc_info=True)
 
 
 async def ensure_demo_files() -> None:

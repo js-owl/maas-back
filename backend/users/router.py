@@ -174,13 +174,17 @@ async def update_user_by_id_endpoint(
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Queue Bitrix contact update if user has a Bitrix contact
-        if updated_user.bitrix_contact_id:
-            try:
-                from backend.bitrix.sync_service import bitrix_sync_service
+        # Queue Bitrix contact sync (create if missing, update if exists)
+        try:
+            from backend.bitrix.sync_service import bitrix_sync_service
+            if updated_user.bitrix_contact_id:
+                # Contact exists, update it
                 await bitrix_sync_service.queue_contact_update(db, updated_user.id)
-            except Exception as e:
-                logger.warning(f"Failed to queue Bitrix contact update for user {updated_user.id}: {e}")
+            else:
+                # Contact doesn't exist, create it
+                await bitrix_sync_service.queue_contact_creation(db, updated_user.id)
+        except Exception as e:
+            logger.warning(f"Failed to queue Bitrix contact sync for user {updated_user.id}: {e}")
         
         return updated_user
     except HTTPException:

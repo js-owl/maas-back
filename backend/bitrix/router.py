@@ -261,3 +261,104 @@ async def delete_sync_queue_item(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error: {str(e)}"
         )
+
+
+@router.get('/bitrix/webhook/setup', tags=["Bitrix Webhook"])
+async def get_webhook_setup(
+    request: Request,
+    admin_user: models.User = Depends(require_admin)
+):
+    """Get webhook configuration instructions for Bitrix (admin only)"""
+    try:
+        from backend.core.config import get_webhook_public_url, BITRIX_WEBHOOK_TOKEN
+        from backend.bitrix.funnel_manager import funnel_manager
+        
+        # Get webhook URL
+        webhook_url = get_webhook_public_url(request)
+        webhook_endpoint = f"{webhook_url}/bitrix/webhook"
+        
+        # Get MaaS funnel category ID
+        maas_category_id = funnel_manager.get_category_id()
+        
+        # Build webhook URL with token
+        webhook_url_with_token = f"{webhook_endpoint}?token={BITRIX_WEBHOOK_TOKEN}" if BITRIX_WEBHOOK_TOKEN else webhook_endpoint
+        
+        # Example webhook payload
+        example_payload = {
+            "event": "ONCRMDEALUPDATE",
+            "data": {
+                "FIELDS": {
+                    "ID": "123",
+                    "STAGE_ID": "C1:NEW",
+                    "OLD_STAGE_ID": "C1:PREPARATION",
+                    "CATEGORY_ID": str(maas_category_id) if maas_category_id else "1",
+                    "OPPORTUNITY": "50000",
+                    "CONTACT_ID": "45",
+                    "TITLE": "Order #123 - cnc-milling",
+                    "CURRENCY_ID": "RUB"
+                }
+            }
+        }
+        
+        return {
+            "success": True,
+            "message": "Webhook configuration instructions",
+            "data": {
+                "webhook_url": webhook_endpoint,
+                "webhook_url_with_token": webhook_url_with_token,
+                "webhook_token": BITRIX_WEBHOOK_TOKEN if BITRIX_WEBHOOK_TOKEN else "Not configured",
+                "webhook_settings": {
+                    "event": "ONCRMDEALUPDATE",
+                    "method": "POST",
+                    "url": webhook_url_with_token if BITRIX_WEBHOOK_TOKEN else webhook_endpoint,
+                    "authentication": {
+                        "type": "token",
+                        "location": "query_parameter",
+                        "parameter_name": "token",
+                        "value": BITRIX_WEBHOOK_TOKEN if BITRIX_WEBHOOK_TOKEN else "Not configured",
+                        "note": "Token can also be sent in X-Bitrix-Token header or Authorization: Bearer header"
+                    },
+                    "filter": {
+                        "CATEGORY_ID": maas_category_id if maas_category_id else "MaaS funnel category ID",
+                        "note": "Only deals in MaaS funnel will be processed"
+                    }
+                },
+                "maas_funnel": {
+                    "category_id": maas_category_id,
+                    "category_name": "MaaS",
+                    "initialized": funnel_manager.is_initialized()
+                },
+                "example_payload": example_payload,
+                "instructions": [
+                    "1. Go to Bitrix24 Settings > CRM > Webhooks",
+                    "2. Create a new outgoing webhook",
+                    f"3. Set Event to: ONCRMDEALUPDATE",
+                    f"4. Set URL to: {webhook_url_with_token if BITRIX_WEBHOOK_TOKEN else webhook_endpoint}",
+                    f"5. Set Filter to: CATEGORY_ID = {maas_category_id if maas_category_id else 'MaaS funnel category ID'}",
+                    "6. Save the webhook",
+                    "7. Test by updating a deal in the MaaS funnel"
+                ],
+                "notes": [
+                    "Webhook authentication uses BITRIX_WEBHOOK_TOKEN to verify requests are from Bitrix",
+                    "Token can be provided as query parameter (?token=...), X-Bitrix-Token header, or Authorization: Bearer header",
+                    "Webhooks are queued to Redis Streams for async processing",
+                    "Only deals in the MaaS funnel will be processed",
+                    "Webhook payloads are normalized and stored with comprehensive deal data",
+                    "Order status is automatically updated based on deal stage changes",
+                    "Order total_price is updated if deal amount changes"
+                ]
+            }
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting webhook setup: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get webhook setup: {str(e)}"
+        )
+
+
+@router.options('/bitrix/webhook/setup', tags=["Bitrix Webhook"])
+async def webhook_setup_options():
+    """Handle CORS preflight requests for webhook setup"""
+    return Response(status_code=200)

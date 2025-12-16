@@ -35,7 +35,8 @@ async def call_calculator_service(
     forward_headers: Optional[dict] = None,
     file_data: Optional[str] = None,
     file_name: Optional[str] = None,
-    file_type: Optional[str] = None
+    file_type: Optional[str] = None,
+    location: Optional[str] = None
 ) -> dict:
     """Universal function to call the external calculator service using unified /calculate-price endpoint"""
     
@@ -62,7 +63,8 @@ async def call_calculator_service(
             "k_otk": k_otk,
             "k_cert": k_cert,
             "n_dimensions": n_dimensions,
-            "k_complexity": k_complexity
+            "k_complexity": k_complexity,
+            "location": location
         }
         
         # Add dimensions only if provided (not None)
@@ -152,46 +154,19 @@ async def call_calculator_service(
     except HTTPException:
         # Re-raise HTTPExceptions (preserves status codes)
         raise
-    except httpx.TimeoutException as e:
-        # Timeout errors
-        error_msg = f"Calculator service timeout after {timeout}s: {service_url}"
-        logger.error(error_msg)
-        logger.error(f"Timeout exception details: {str(e)}")
-        logger.error(f"Calculator service URL: {CALCULATOR_BASE_URL}")
-        raise HTTPException(
-            status_code=502, 
-            detail=f"Calculator service timeout. The service at {CALCULATOR_BASE_URL} did not respond within {timeout} seconds. This may indicate the service is overloaded or processing a large file."
-        )
-    except httpx.ConnectError as e:
-        # Connection refused/network errors
-        error_msg = f"Calculator service connection error: {service_url}"
-        logger.error(error_msg)
-        logger.error(f"Connection error details: {str(e)}")
-        logger.error(f"Calculator service URL: {CALCULATOR_BASE_URL}")
-        raise HTTPException(
-            status_code=502, 
-            detail=f"Calculator service unavailable at {CALCULATOR_BASE_URL}. Connection refused. Please ensure the calculator service is running on port 7000."
-        )
     except httpx.RequestError as e:
-        # Other network/request errors
+        # Only network/connection errors become 502
         error_msg = f"Network error during calculator service call to {service_url}: {str(e)}"
         logger.error(error_msg)
-        logger.error(f"Request error type: {type(e).__name__}")
-        logger.error(f"Request error details: {repr(e)}")
         logger.error(f"Calculator service URL: {CALCULATOR_BASE_URL}")
         raise HTTPException(
             status_code=502, 
-            detail=f"Calculator service unavailable at {CALCULATOR_BASE_URL}. Network error: {str(e)}"
+            detail=f"Calculator service unavailable at {CALCULATOR_BASE_URL}. Please ensure the calculator service is running."
         )
     except Exception as e:
-        # Other unexpected errors
-        error_msg = f"Unexpected error during calculator service call: {type(e).__name__}: {str(e)}"
-        logger.error(error_msg, exc_info=True)
-        logger.error(f"Calculator service URL: {CALCULATOR_BASE_URL}")
-        raise HTTPException(
-            status_code=500, 
-            detail=f"Internal server error: {str(e)}"
-        )
+        # Other errors become 500
+        logger.error(f"Unexpected error during calculator service call: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 async def analyze_stp_file(file_path: str, filename: str) -> Dict[str, Any]:

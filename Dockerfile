@@ -22,9 +22,14 @@ RUN if [ -n "$LINUX_PROXY_URL" ]; then \
     fi
 
 # Install system dependencies
+# Use Pandoc + texlive-xetex for DOCX to PDF conversion with Unicode support (lighter than LibreOffice)
 RUN apt-get update && apt-get install -y \
     build-essential \
     curl \
+    pandoc \
+    texlive-xetex \
+    texlive-fonts-recommended \
+    fonts-dejavu \
     && rm -rf /var/lib/apt/lists/*
 
 COPY pip.conf /etc/pip.conf

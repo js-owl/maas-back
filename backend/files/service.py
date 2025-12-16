@@ -99,10 +99,10 @@ async def get_file_download_path(file_record: models.FileStorage) -> Optional[Pa
     normalized_path = file_record.file_path.replace('\\', '/')
     
     # If it's a relative path, make it absolute from /app
-    # if not normalized_path.startswith('/'):
-    #     file_path = Path('/app') / normalized_path
-    # else:
-    file_path = Path(normalized_path)
+    if not normalized_path.startswith('/'):
+        file_path = Path('/app') / normalized_path
+    else:
+        file_path = Path(normalized_path)
     
     if file_path.exists():
         return file_path

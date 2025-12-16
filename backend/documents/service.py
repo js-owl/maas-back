@@ -96,3 +96,58 @@ async def get_document_download_path(document_record: models.DocumentStorage) ->
 def get_supported_formats() -> List[str]:
     """Get list of supported document formats"""
     return document_storage.get_supported_formats()
+
+
+async def create_document_from_file_path(
+    db: AsyncSession,
+    file_path: str,
+    user_id: int,
+    category: str = None,
+    original_filename: str = None
+) -> Optional[models.DocumentStorage]:
+    """Create document record from existing file path"""
+    try:
+        from datetime import datetime, timezone
+        import os
+        
+        path = Path(file_path)
+        if not path.exists():
+            logger.error(f"File does not exist: {file_path}")
+            return None
+        
+        # Get file metadata
+        file_size = path.stat().st_size
+        file_extension = path.suffix.lower()
+        
+        # Determine file type from extension
+        file_type = file_extension[1:] if file_extension else "unknown"
+        
+        # Use provided original filename or derive from path
+        if not original_filename:
+            original_filename = path.name
+        
+        # Generate unique filename if needed (to avoid conflicts)
+        # For now, use the existing filename since the file already exists
+        unique_filename = path.name
+        
+        # Prepare document data
+        document_data = {
+            "filename": unique_filename,
+            "original_filename": original_filename,
+            "file_path": str(path),
+            "file_size": file_size,
+            "file_type": file_type,
+            "uploaded_by": user_id,
+            "document_category": category,
+            "uploaded_at": datetime.now(timezone.utc)
+        }
+        
+        # Create database record
+        db_document = await repo_create_document(db, document_data)
+        
+        logger.info(f"Document created from file path: {file_path} (ID: {db_document.id})")
+        return db_document
+        
+    except Exception as e:
+        logger.error(f"Error creating document from file path {file_path}: {e}", exc_info=True)
+        return None

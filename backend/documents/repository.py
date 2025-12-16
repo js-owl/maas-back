@@ -43,6 +43,12 @@ async def get_documents_by_category(db: AsyncSession, category: str) -> List[mod
     return result.scalars().all()
 
 
+async def get_document_by_filename(db: AsyncSession, filename: str) -> Optional[models.DocumentStorage]:
+    """Get document by filename"""
+    result = await db.execute(select(models.DocumentStorage).where(models.DocumentStorage.filename == filename))
+    return result.scalar_one_or_none()
+
+
 async def delete_document(db: AsyncSession, document_id: int) -> bool:
     """Delete document record"""
     document = await get_document_by_id(db, document_id)

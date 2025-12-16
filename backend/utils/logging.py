@@ -13,6 +13,9 @@ logging.getLogger('sqlalchemy.pool').setLevel(logging.WARNING)
 logging.getLogger('sqlalchemy.dialects').setLevel(logging.WARNING)
 logging.getLogger('sqlalchemy.orm').setLevel(logging.WARNING)
 
+# Reduce httpx logging verbosity (400 errors are expected for deleted deals)
+logging.getLogger('httpx').setLevel(logging.WARNING)
+
 # Reduce Bitrix warnings to reduce log noise (optional)
 logging.getLogger('backend.bitrix').setLevel(logging.ERROR)
 

@@ -19,7 +19,8 @@ from backend.core.error_handlers import (
     general_exception_handler
 )
 from fastapi.exceptions import RequestValidationError
-from backend.database import seed_admin, ensure_order_new_columns, AsyncSessionLocal
+from backend.database import seed_admin, ensure_order_new_columns, ensure_invoices_table, AsyncSessionLocal
+from sqlalchemy import select, func
 from fastapi import Request
 from backend.utils.logging import get_logger
 import os
@@ -140,6 +141,7 @@ from backend.auth.router import router as auth_router
 from backend.users.router import router as users_router
 from backend.files.router import router as files_router
 from backend.documents.router import router as documents_router
+from backend.invoices.router import router as invoices_router
 from backend.calculations.router import router as calculations_router
 from backend.orders.router import router as orders_router
 from backend.bitrix.router import router as bitrix_router
@@ -151,6 +153,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(files_router)
 app.include_router(documents_router)
+app.include_router(invoices_router)
 app.include_router(calculations_router)
 app.include_router(orders_router)
 app.include_router(bitrix_router)
@@ -286,6 +289,132 @@ async def debug_request(request: Request):
     return response_data
 
 
+async def auto_migrate_invoices_if_needed():
+    """Automatically migrate invoices from documents table if needed"""
+    try:
+        async with AsyncSessionLocal() as db:
+            # Check if there are invoices in documents table
+            from backend import models
+            result = await db.execute(
+                select(func.count(models.DocumentStorage.id)).where(
+                    models.DocumentStorage.document_category == "invoice"
+                )
+            )
+            invoice_doc_count = result.scalar() or 0
+            
+            # Check if invoices table has any records
+            result = await db.execute(
+                select(func.count(models.InvoiceStorage.id))
+            )
+            invoice_count = result.scalar() or 0
+            
+            # If there are invoice documents but no invoices, run migration
+            if invoice_doc_count > 0 and invoice_count == 0:
+                logger.info(f"Found {invoice_doc_count} invoice documents to migrate, running automatic migration...")
+                # Import and run migration function directly
+                from backend.database import ensure_invoices_table
+                from backend.invoices.service import create_invoice_from_file_path
+                from backend.invoices.repository import get_invoice_by_filename
+                from backend.documents.repository import get_documents_by_category
+                from sqlalchemy import update
+                import json
+                
+                # Ensure invoices table exists
+                await ensure_invoices_table()
+                
+                # Get all documents currently categorized as 'invoice'
+                invoice_documents = await get_documents_by_category(db, "invoice")
+                
+                if invoice_documents:
+                    migrated_count = 0
+                    order_updates = {}
+                    
+                    for doc in invoice_documents:
+                        try:
+                            # Check if an invoice with this filename already exists
+                            existing_invoice = await get_invoice_by_filename(db, doc.filename)
+                            
+                            if existing_invoice:
+                                logger.debug(f"Invoice for document {doc.id} already exists, skipping")
+                                continue
+                            
+                            # Extract order_id from file_metadata
+                            order_id = None
+                            if doc.file_metadata:
+                                try:
+                                    metadata = json.loads(doc.file_metadata)
+                                    order_id = metadata.get("order_id")
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
+                            
+                            if not order_id:
+                                # Try to infer from filename
+                                try:
+                                    if "invoice_order_" in doc.filename:
+                                        parts = doc.filename.split("invoice_order_")[1].split("_")
+                                        order_id = int(parts[0])
+                                except (ValueError, IndexError):
+                                    pass
+                            
+                            if not order_id:
+                                logger.warning(f"Could not determine order_id for document {doc.id}, skipping")
+                                continue
+                            
+                            # Create new InvoiceStorage record
+                            new_invoice = await create_invoice_from_file_path(
+                                db=db,
+                                file_path=doc.file_path,
+                                order_id=order_id,
+                                bitrix_document_id=None,
+                                generated_at=doc.uploaded_at,
+                                original_filename=doc.original_filename
+                            )
+                            
+                            if new_invoice:
+                                migrated_count += 1
+                                if order_id not in order_updates:
+                                    order_updates[order_id] = []
+                                order_updates[order_id].append(new_invoice.id)
+                        except Exception as e:
+                            logger.error(f"Error migrating document {doc.id}: {e}", exc_info=True)
+                            await db.rollback()
+                            await db.begin()
+                    
+                    # Update orders' invoice_ids
+                    for order_id, new_invoice_ids in order_updates.items():
+                        order_result = await db.execute(
+                            select(models.Order).where(models.Order.order_id == order_id)
+                        )
+                        order = order_result.scalar_one_or_none()
+                        if order:
+                            current_invoice_ids = []
+                            if order.invoice_ids:
+                                try:
+                                    current_invoice_ids = json.loads(order.invoice_ids) if isinstance(order.invoice_ids, str) else order.invoice_ids
+                                except (json.JSONDecodeError, TypeError):
+                                    current_invoice_ids = []
+                            
+                            for inv_id in new_invoice_ids:
+                                if inv_id not in current_invoice_ids:
+                                    current_invoice_ids.append(inv_id)
+                            
+                            await db.execute(
+                                update(models.Order)
+                                .where(models.Order.order_id == order_id)
+                                .values(invoice_ids=json.dumps(current_invoice_ids))
+                            )
+                            await db.commit()
+                    
+                    logger.info(f"Automatic invoice migration completed: {migrated_count} invoices migrated")
+            elif invoice_doc_count > 0 and invoice_count > 0:
+                logger.debug(f"Invoice migration check: {invoice_doc_count} documents in documents table, {invoice_count} invoices in invoices table (migration may be partial)")
+            else:
+                logger.debug(f"Invoice migration check: {invoice_doc_count} documents, {invoice_count} invoices (no migration needed)")
+    except Exception as e:
+        logger.warning(f"Could not check/run invoice migration: {e}", exc_info=True)
+        # Don't fail startup if migration check fails
+
+
 # Startup event
 @app.on_event("startup")
 async def startup_event():
@@ -294,6 +423,10 @@ async def startup_event():
     
     # Run database migrations
     await ensure_order_new_columns()
+    await ensure_invoices_table()
+    
+    # Automatically migrate invoices from documents table if needed
+    await auto_migrate_invoices_if_needed()
     
     # Seed admin user
     await seed_admin()
@@ -404,6 +537,34 @@ async def startup_event():
         app.state.bitrix_worker_task = task
     else:
         logger.info("Bitrix worker is disabled (BITRIX_WORKER_ENABLED=false)")
+    
+    # Start Bitrix deal sync scheduler
+    from backend.bitrix.deal_sync_scheduler import deal_sync_scheduler
+    
+    async def start_sync_scheduler():
+        """Start Bitrix deal sync scheduler in background"""
+        try:
+            await deal_sync_scheduler.start_sync_task()
+        except asyncio.CancelledError:
+            logger.info("Bitrix deal sync scheduler task was cancelled")
+            deal_sync_scheduler.running = False
+        except Exception as e:
+            logger.error(f"Bitrix deal sync scheduler error: {e}", exc_info=True)
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            # Restart scheduler after error (with delay)
+            logger.info("Restarting deal sync scheduler after error in 10 seconds...")
+            await asyncio.sleep(10)
+            # Recursively restart
+            task = asyncio.create_task(start_sync_scheduler())
+            app.state.bitrix_sync_scheduler_task = task
+    
+    # Start scheduler as background task (don't await it)
+    sync_scheduler_task = asyncio.create_task(start_sync_scheduler())
+    logger.info(f"Bitrix deal sync scheduler task created: {sync_scheduler_task}")
+    logger.info("Bitrix deal sync scheduler started in background")
+    # Store task reference to prevent garbage collection
+    app.state.bitrix_sync_scheduler_task = sync_scheduler_task
     
     logger.info("Application startup complete")
 

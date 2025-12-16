@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="robots" content="noindex, nofollow, noarchive">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<script data-skip-moving="true">(function() {const canvas = document.createElement('canvas');let gl;try{gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl');}catch (e){return;}if (!gl){return;}const result = {vendor: gl.getParameter(gl.VENDOR),renderer: gl.getParameter(gl.RENDERER),};const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');if (debugInfo){result.unmaskedVendor = gl.getParameter(debugInfo.UNMASKED_VENDOR_WEBGL);result.unmaskedRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);}function isLikelyIntegratedGPU(gpuInfo){const renderer = (gpuInfo.unmaskedRenderer || gpuInfo.renderer || '').toLowerCase();const vendor = (gpuInfo.unmaskedVendor || gpuInfo.vendor || '').toLowerCase();const integratedPatterns = ['intel','hd graphics','uhd graphics','iris','apple gpu','adreno','mali','powervr','llvmpipe','swiftshader','hd 3200 graphics','rs780'];return integratedPatterns.some(pattern => renderer.includes(pattern) || vendor.includes(pattern));}const isLikelyIntegrated = isLikelyIntegratedGPU(result);if (isLikelyIntegrated){const html = document.documentElement;html.classList.add('bx-integrated-gpu', '--ui-reset-bg-blur');}})();</script>
+
+
+<link href="/bitrix/js/ui/design-tokens/dist/ui.design-tokens.min.css?176413983223463" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/intranet/design-tokens/bitrix24/air-design-tokens.min.css?17645810673744" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/fonts/opensans/ui.font.opensans.min.css?17641398322320" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/popup/dist/main.popup.bundle.min.css?176458050428056" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/fonts/roboto/ui.font.roboto.min.css?17641398324037" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/loader/dist/loader.bundle.min.css?17641397082029" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/design-tokens/air/dist/air-design-tokens.min.css?1764581049106588" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/icon-base.min.css?17645805691604" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/actions/style.min.css?176458056919578" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/main/style.min.css?176458056974857" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/ui/icon-set/outline/style.min.css?1764581135104296" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/main/sidepanel/dist/side-panel.bundle.min.css?176458097322056" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/js/documentgenerator/css/documentpreview.min.css?1764139739241" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/cache/css/s1/pub/page_7c45996dda310d7a550319a69ff5a034/page_7c45996dda310d7a550319a69ff5a034_v1.css?1764591520273" type="text/css"  rel="stylesheet" />
+<link href="/bitrix/cache/css/s1/pub/template_506939ab9db48043676a99dcbaffd2bc/template_506939ab9db48043676a99dcbaffd2bc_v1.css?176459152011540" type="text/css"  data-template-style="true" rel="stylesheet" />
+<script>if(!window.BX)window.BX={};if(!window.BX.message)window.BX.message=function(mess){if(typeof mess==='object'){for(let i in mess) {BX.message[i]=mess[i];} return true;}};</script>
+<script>(window.BX||top.BX).message({"JS_CORE_LOADING":"Загрузка...","JS_CORE_NO_DATA":"- Нет данных -","JS_CORE_WINDOW_CLOSE":"Закрыть","JS_CORE_WINDOW_EXPAND":"Развернуть","JS_CORE_WINDOW_NARROW":"Свернуть в окно","JS_CORE_WINDOW_SAVE":"Сохранить","JS_CORE_WINDOW_CANCEL":"Отменить","JS_CORE_WINDOW_CONTINUE":"Продолжить","JS_CORE_H":"ч","JS_CORE_M":"м","JS_CORE_S":"с","JSADM_AI_HIDE_EXTRA":"Скрыть лишние","JSADM_AI_ALL_NOTIF":"Показать все","JSADM_AUTH_REQ":"Требуется авторизация!","JS_CORE_WINDOW_AUTH":"Войти","JS_CORE_IMAGE_FULL":"Полный размер"});</script>
+
+<script src="/bitrix/js/main/core/core.min.js?1764580957229643"></script>
+
+<script>BX.Runtime.registerExtension({"name":"main.core","namespace":"BX","loaded":true});</script>
+<script>BX.setJSList(["\/bitrix\/js\/main\/core\/core_ajax.js","\/bitrix\/js\/main\/core\/core_promise.js","\/bitrix\/js\/main\/polyfill\/promise\/js\/promise.js","\/bitrix\/js\/main\/loadext\/loadext.js","\/bitrix\/js\/main\/loadext\/extension.js","\/bitrix\/js\/main\/polyfill\/promise\/js\/promise.js","\/bitrix\/js\/main\/polyfill\/find\/js\/find.js","\/bitrix\/js\/main\/polyfill\/includes\/js\/includes.js","\/bitrix\/js\/main\/polyfill\/matches\/js\/matches.js","\/bitrix\/js\/ui\/polyfill\/closest\/js\/closest.js","\/bitrix\/js\/main\/polyfill\/fill\/main.polyfill.fill.js","\/bitrix\/js\/main\/polyfill\/find\/js\/find.js","\/bitrix\/js\/main\/polyfill\/matches\/js\/matches.js","\/bitrix\/js\/main\/polyfill\/core\/dist\/polyfill.bundle.js","\/bitrix\/js\/main\/core\/core.js","\/bitrix\/js\/main\/polyfill\/intersectionobserver\/js\/intersectionobserver.js","\/bitrix\/js\/main\/lazyload\/dist\/lazyload.bundle.js","\/bitrix\/js\/main\/polyfill\/core\/dist\/polyfill.bundle.js","\/bitrix\/js\/main\/parambag\/dist\/parambag.bundle.js"]);
+</script>
+<script>BX.Runtime.registerExtension({"name":"pull.protobuf","namespace":"BX","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"rest.client","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"pull_server_enabled":"N","pull_config_timestamp":0,"shared_worker_allowed":"Y","pull_guest_mode":"N","pull_guest_user_id":0,"pull_worker_mtime":1764579861});(window.BX||top.BX).message({"PULL_OLD_REVISION":"Для продолжения корректной работы с сайтом необходимо перезагрузить страницу."});</script>
+<script>BX.Runtime.registerExtension({"name":"pull.client","namespace":"BX","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"pull","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"intranet.design-tokens.bitrix24","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.design-tokens","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.fonts.opensans","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"main.popup","namespace":"BX.Main","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"popup","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.fonts.roboto","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"main.loader","namespace":"BX","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"loader","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"fx","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"main.pageobject","namespace":"BX","loaded":true});</script>
+<script>(window.BX||top.BX).message({"CORE_CLIPBOARD_COPY_SUCCESS":"Скопировано","CORE_CLIPBOARD_COPY_FAILURE":"Не удалось скопировать"});</script>
+<script>BX.Runtime.registerExtension({"name":"clipboard","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.design-tokens.air","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set.actions","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set.main","namespace":"window","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"ui.icon-set.outline","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"MAIN_SIDEPANEL_CLOSE":"Закрыть","MAIN_SIDEPANEL_PRINT":"Печать","MAIN_SIDEPANEL_NEW_WINDOW":"Открыть в новом окне","MAIN_SIDEPANEL_COPY_LINK":"Скопировать ссылку","MAIN_SIDEPANEL_MINIMIZE":"Свернуть","MAIN_SIDEPANEL_REMOVE_ALL":"Удалить всё из быстрого доступа"});</script>
+<script>BX.Runtime.registerExtension({"name":"main.sidepanel","namespace":"BX.SidePanel","loaded":true});</script>
+<script>BX.Runtime.registerExtension({"name":"sidepanel","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"DOCGEN_POPUP_CLOSE_BUTTON":"Закрыть","DOCGEN_POPUP_NUMBER_TITLE":"Выберите номер","DOCGEN_POPUP_DO_USE_OLD_NUMBER":"У вас уже есть документ по этому шаблону. Создать для нового документа новый номер или использовать предыдущий?","DOCGEN_POPUP_OLD_BUTTON":"Использовать предыдущий","DOCGEN_POPUP_NEW_BUTTON":"Создать новый","DOCGEN_POPUP_PRINT_IS_NOT_AVAILABLE":"Печать документа невозможна","DOCGEN_POPUP_CONTINUE_BUTTON":"Продолжить","DOCGEN_POPUP_PRINT_TITLE":"Печать документа"});</script>
+<script>BX.Runtime.registerExtension({"name":"documentpreview","namespace":"window","loaded":true});</script>
+<script>(window.BX||top.BX).message({"LANGUAGE_ID":"ru","FORMAT_DATE":"DD.MM.YYYY","FORMAT_DATETIME":"DD.MM.YYYY HH:MI:SS","COOKIE_PREFIX":"BITRIX_SM","SERVER_TZ_OFFSET":"0","UTF_MODE":"Y","SITE_ID":"s1","SITE_DIR":"\/","USER_ID":"","SERVER_TIME":1764613488,"USER_TZ_OFFSET":0,"USER_TZ_AUTO":"Y","bitrix_sessid":"01307c8ba8f8452c694eb742eaafbd99"});</script>
+
+
+<script  src="/bitrix/cache/js/s1/pub/kernel_main/kernel_main_v1.js?176459152011000"></script>
+<script src="/bitrix/js/pull/protobuf/protobuf.min.js?176413976976433"></script>
+<script src="/bitrix/js/pull/protobuf/model.min.js?176413976914190"></script>
+<script src="/bitrix/js/rest/client/rest.client.min.js?17641397719240"></script>
+<script src="/bitrix/js/pull/client/pull.client.min.js?176457986249849"></script>
+<script src="/bitrix/js/main/popup/dist/main.popup.bundle.min.js?176458097367480"></script>
+<script src="/bitrix/js/main/loader/dist/loader.bundle.min.js?17641397084392"></script>
+<script src="/bitrix/js/main/core/core_clipboard.min.js?17641397082246"></script>
+<script src="/bitrix/js/main/sidepanel/dist/side-panel.bundle.min.js?176458097391427"></script>
+<script src="/bitrix/js/documentgenerator/documentpreview.min.js?176458118914035"></script>
+<script>BX.setJSList(["\/bitrix\/js\/main\/core\/core_fx.js","\/bitrix\/js\/main\/pageobject\/dist\/pageobject.bundle.js","\/bitrix\/templates\/pub\/template_scripts.js"]);</script>
+<script>BX.setCSSList(["\/bitrix\/components\/bitrix\/documentgenerator.view\/templates\/.default\/style.css","\/bitrix\/templates\/pub\/template_styles.css"]);</script>
+<script>
+					if (Intl && Intl.DateTimeFormat)
+					{
+						const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+						document.cookie = "BITRIX_SM_TZ=" + timezone + "; path=/; expires=Tue, 01 Dec 2026 00:00:00 +0000";
+						
+					}
+				</script>
+<script>
+					(function () {
+						"use strict";
+
+						var counter = function ()
+						{
+							var cookie = (function (name) {
+								var parts = ("; " + document.cookie).split("; " + name + "=");
+								if (parts.length == 2) {
+									try {return JSON.parse(decodeURIComponent(parts.pop().split(";").shift()));}
+									catch (e) {}
+								}
+							})("BITRIX_CONVERSION_CONTEXT_s1");
+
+							if (cookie && cookie.EXPIRE >= BX.message("SERVER_TIME"))
+								return;
+
+							var request = new XMLHttpRequest();
+							request.open("POST", "/bitrix/tools/conversion/ajax_counter.php", true);
+							request.setRequestHeader("Content-type", "application/x-www-form-urlencoded");
+							request.send(
+								"SITE_ID="+encodeURIComponent("s1")+
+								"&sessid="+encodeURIComponent(BX.bitrix_sessid())+
+								"&HTTP_REFERER="+encodeURIComponent(document.referrer)
+							);
+						};
+
+						if (window.frameRequestStart === true)
+							BX.addCustomEvent("onFrameDataReceived", counter);
+						else
+							BX.ready(counter);
+					})();
+				</script>
+
+
+
+<script  src="/bitrix/cache/js/s1/pub/template_6b049bbb6bf02bafb416501c2e3416d5/template_6b049bbb6bf02bafb416501c2e3416d5_v1.js?1764591520772"></script>
+
+<title></title>
+</head>
+
+<body class="">
+<table class="main-wrapper">
+	<tr>
+		<td class="main-wrapper-content-cell">
+			<div class="content-wrap">
+				<div class="content">
+					<h1 class="main-title">
+													<span class="main-title-inner">MaaS</span>
+															<span class="title-num">24</span>
+																		</h1>
+	<h3 class="document-view-header">Пожалуйста, дождитесь окончания конвертации</h3>
+<script>
+BX.ready(function()
+{
+	var options = {'changeStampsEnabled':false,'changeQrCodeEnabled':false,'qrCodeEnabled':false,'changeQrCodeDisabledReason':'Недостаточно данных для формирования QR-кода','changeStampsDisabledReason':'У вас не загружены печать и подпись в реквизитах компании.','myCompanyEditUrl':false,'products':{'currencyId':'RUB','totalSum':'11520.67','totalRows':'0'},'downloadUrl':'/bitrix/services/main/ajax.php?action=documentgenerator.api.publicdocument.getFile&SITE_ID=s1&id=3&hash=4a89b1f33de1c5cdade8bc4bc175ce72','publicUrl':'https://mybitrix.org/~DLZJT','title':'Счет (Россия) 2','number':'2','id':'3','createTime':'01.12.2025 18:20:08','createdBy':'1','updateTime':'01.12.2025 18:20:08','updatedBy':'','stampsEnabled':false,'isTransformationError':false,'value':'61','values':{'productsTableVariant':'','_creationMethod':'public'},'publicUrlView':{'time':'01.12.2025 18:24:48'},'templateId':'2','provider':'Bitrix\\Crm\\Integration\\DocumentGenerator\\DataProvider\\Deal','pullTag':'TRANSFORMDOCUMENT3','emailDiskFile':'102','isPdfReady':false,'pdfUrl':'/bitrix/services/main/ajax.php?action=documentgenerator.api.publicdocument.getPdf&SITE_ID=s1&id=3&hash=4a89b1f33de1c5cdade8bc4bc175ce72','printUrl':'/bitrix/services/main/ajax.php?action=documentgenerator.api.publicdocument.showPdf&SITE_ID=s1&print=y&id=3&hash=4a89b1f33de1c5cdade8bc4bc175ce72'};
+	options.onReady = function(options)
+	{
+		location.reload();
+	};
+	var preview = new BX.DocumentGenerator.DocumentPreview(options);
+});
+</script>
+					<div id="pub-template-error" class="error-block" style="display: none; ">
+						<div id="pub-template-error-title" class="error-block-title"></div>
+						<div id="pub-template-error-text" class="error-block-text"></div>
+					</div>
+				</div>
+			</div>
+		</td>
+	</tr>
+	<tr class="main-wrapper-footer">
+		<td class="main-wrapper-footer-cell">
+			<div class="content-wrap">
+													<a class="footer-logo ru" target="_blank" href="https://www.bitrix24.ru/?c=mybitrix.org">
+						<span class="footer-logo-text">Заряжено</span>
+						<span class="footer-logo-img"></span>
+					</a>
+							</div>
+		</td>
+	</tr>
+</table>
+<div class="bottom-cloud"></div>
+<div class="left-cloud"></div>
+<div class="right-cloud"></div>
+
+<script>
+
+var pubTemplate = {
+
+	showError: function(error, params)
+	{
+		switch (error.toString())
+		{
+			case '204':
+				var error = {
+					title: 'Не удалось показать содержимое письма',
+					text: 'Данные на странице не загрузились,<br>нажмите ссылку <a href=\"#TARGET#\">обновить<\/a>.'
+				};
+				break;
+			case '401':
+				var error = {
+					title: 'Перейдите по ссылке в письме',
+					text: 'К сожалению, время действия ссылки закончилось.<br>Чтобы продолжить работу, перейдите по ссылке в письме снова.'
+				};
+				break;
+			case '403':
+				var error = {
+					title: 'Недостаточно прав',
+					text: 'К сожалению, у вас недостаточно прав на просмотр страницы.<br>Для решения этой ситуации вы можете обратиться к автору письма.'
+				};
+				break;
+			case '400':
+			case '404':
+				var error = {
+					title: 'Ничего не найдено',
+					text: 'К сожалению, запрошенная страница не найдена.<br>Для решения этой ситуации вы можете обратиться к автору письма.'
+				};
+				break;
+			default:
+				var error = {
+					title: 'Произошла ошибка',
+					text: error
+				};
+		}
+
+		if (params)
+		{
+			for (var key in params)
+				error.text = error.text.replace('#'+key.toUpperCase()+'#', params[key]);
+		}
+
+		BX.adjust(BX('pub-template-error-title'), { html: error.title });
+		BX.adjust(BX('pub-template-error-text'), { html: error.text });
+
+		BX.show(BX('pub-template-error'), 'block');
+	}
+
+};
+
+
+
+</script>
+
+</body>
+</html>

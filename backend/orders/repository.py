@@ -47,7 +47,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         k_otk=order.k_otk,
         k_cert=order.k_cert,
         n_dimensions=order.n_dimensions,
-        status='pending',
+        status='NEW',  # Use Bitrix stage name (NEW) instead of old status (pending)
         # Store calculation results if provided
         mat_volume=calc.get('mat_volume') if calc else None,
         detail_price=calc.get('detail_price') if calc else None,
@@ -169,8 +169,8 @@ async def update_order(db: AsyncSession, order_id: int, order_update: schemas.Or
     # Update fields
     update_data = order_update.dict(exclude_unset=True)
     for field, value in update_data.items():
-        # Serialize document_ids to JSON string since it's stored as Text, not JSON
-        if field == 'document_ids' and value is not None:
+        # Serialize document_ids and invoice_ids to JSON string since they're stored as Text, not JSON
+        if field in ('document_ids', 'invoice_ids') and value is not None:
             if isinstance(value, list):
                 setattr(order, field, json.dumps(value))
             else:

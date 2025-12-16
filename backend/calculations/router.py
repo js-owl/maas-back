@@ -156,6 +156,7 @@ async def calculate_price(
     k_otk = request_data.k_otk or "1"
     k_cert = request_data.k_cert or ["a", "f"]
     n_dimensions = request_data.n_dimensions or 1
+    location = request_data.location or "location_1"
 
     # Process k_cert to list if passed as JSON string
     if isinstance(k_cert, str):
@@ -229,9 +230,6 @@ async def calculate_price(
         # Start timing calculator service call specifically
         calc_service_start_time = time.time()
         
-        # Increase timeout for file processing (30s for files, 15s for dimensions only)
-        timeout = 30.0 if file_data else 15.0
-        
         calc_res = await call_calculator_service(
             service_id=request_data.service_id,  # Pass service_id directly
             material_id=material_id,
@@ -247,11 +245,12 @@ async def calculate_price(
             cover_id=cover_id_for_calculator,
             k_otk=k_otk,
             k_cert=k_cert,
-            timeout=timeout,
+            timeout=10.0,
             forward_headers=forward_headers,
             file_data=file_data,
             file_name=file_name,
-            file_type=file_type
+            file_type=file_type,
+            location=location
         )
         # End timing calculator service call
         calc_service_end_time = time.time()
@@ -259,17 +258,10 @@ async def calculate_price(
         logger.info("Calculator response OK")
     except HTTPException as e:
         # Re-raise HTTPExceptions (preserves status codes from calculator service)
-        logger.error(f"Calculator service returned HTTP error: {e.status_code} - {e.detail}")
         raise e
     except Exception as exc:
-        logger.error(f"Calculator service error: {type(exc).__name__}: {str(exc)}", exc_info=True)
-        logger.error(f"Request data: service_id={request_data.service_id}, material_id={material_id}, quantity={quantity}")
-        if file_data:
-            logger.error(f"File data present: {len(file_data)} bytes, filename={file_name}")
-        raise HTTPException(
-            status_code=502, 
-            detail=f"Calculator service unavailable: {str(exc)}"
-        )
+        logger.error(f"Calculator service error: {exc}")
+        raise HTTPException(status_code=502, detail="Calculator service unavailable")
     
     # Map to simple shape aligning with /orders calc usage
     data = calc_res if isinstance(calc_res, dict) else {}

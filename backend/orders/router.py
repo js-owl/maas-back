@@ -20,7 +20,6 @@ from backend.orders.service import (
     recalculate_order_price,
     sync_orders_with_bitrix
 )
-from backend.orders.invoice_service import invoice_service
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -48,6 +47,10 @@ async def admin_order_options():
     """Handle CORS preflight requests for admin order by ID"""
     return Response(status_code=200)
 
+@router.options('/orders/{order_id}/documents', tags=["Orders"])
+async def order_documents_options():
+    """Handle CORS preflight requests for order documents"""
+    return Response(status_code=200)
 
 @router.post('/orders', response_model=schemas.OrderOut, tags=["Orders"])
 async def create_order(
@@ -74,7 +77,8 @@ async def create_order(
             cover_id=request_data.cover_id,
             k_otk=request_data.k_otk,
             k_cert=request_data.k_cert,
-            n_dimensions=request_data.n_dimensions
+            n_dimensions=request_data.n_dimensions,
+            location=request_data.location
         )
         
         # Create order with calculation - use appropriate function based on file_id
@@ -135,6 +139,63 @@ async def get_order(
     except Exception as e:
         logger.error(f"Error getting order {order_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get order")
+
+
+@router.get('/orders/{order_id}/documents', response_model=List[schemas.DocumentStorageOut], tags=["Orders"])
+async def get_order_documents(
+    order_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get user-uploaded documents attached to an order (excludes invoices)"""
+    try:
+        import json
+        
+        # Get order
+        order = await get_order_by_id(db, order_id)
+        if not order:
+            raise HTTPException(status_code=404, detail="Order not found")
+        
+        # Check access permissions
+        if order.user_id != current_user.id and not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Access denied")
+        
+        # Get document IDs from order (user-uploaded technical documents only)
+        if not order.document_ids:
+            return []
+        
+        # Parse document_ids (can be JSON string or list)
+        doc_ids = []
+        if isinstance(order.document_ids, str):
+            try:
+                doc_ids = json.loads(order.document_ids)
+            except (json.JSONDecodeError, ValueError):
+                logger.warning(f"Invalid document_ids format for order {order_id}: {order.document_ids}")
+                return []
+        elif isinstance(order.document_ids, list):
+            doc_ids = order.document_ids
+        
+        if not doc_ids:
+            return []
+        
+        # Get documents
+        from backend.documents.service import get_documents_by_ids
+        documents = await get_documents_by_ids(db, doc_ids)
+        
+        # Return all documents from document_ids (these are user-uploaded technical docs)
+        user_documents = []
+        for doc in documents:
+            # User can access if: document is theirs, or they own the order, or they're admin
+            if doc.uploaded_by == current_user.id or order.user_id == current_user.id or current_user.is_admin:
+                user_documents.append(doc)
+        
+        return user_documents
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting documents for order {order_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to get order documents")
 
 
 @router.put('/orders/{order_id}', response_model=schemas.OrderOut, tags=["Orders"])
@@ -400,95 +461,3 @@ async def get_order_status_external(
     except Exception as e:
         logger.error(f"Error getting external order status {order_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get order status")
-
-
-@router.get('/orders/{order_id}/invoice', tags=["Orders"])
-async def download_invoice(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Download invoice for order if available"""
-    try:
-        # Check if user owns the order or is admin
-        order = await get_order_by_id(db, order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        
-        if order.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Get invoice file path
-        invoice_path = await invoice_service.get_invoice_file_path(db, order_id)
-        if not invoice_path:
-            raise HTTPException(status_code=404, detail="Invoice not available")
-        
-        # Return file
-        from fastapi.responses import FileResponse
-        return FileResponse(
-            path=invoice_path,
-            filename=f"invoice_order_{order_id}.pdf",
-            media_type="application/pdf"
-        )
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error downloading invoice for order {order_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to download invoice")
-
-
-@router.post('/orders/{order_id}/invoice/refresh', tags=["Orders"])
-async def refresh_invoice(
-    order_id: int,
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Manually check Bitrix for new invoice"""
-    try:
-        # Check if user owns the order or is admin
-        order = await get_order_by_id(db, order_id)
-        if not order:
-            raise HTTPException(status_code=404, detail="Order not found")
-        
-        if order.user_id != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
-        # Refresh invoice
-        success = await invoice_service.refresh_invoice(db, order_id)
-        
-        if success:
-            return {
-                "success": True,
-                "message": "Invoice refreshed successfully"
-            }
-        else:
-            return {
-                "success": False,
-                "message": "No new invoice found or failed to download"
-            }
-        
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error refreshing invoice for order {order_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to refresh invoice")
-
-
-@router.get('/orders/invoices/missing', tags=["Orders"])
-async def get_orders_without_invoices(
-    db: AsyncSession = Depends(get_db),
-    admin_user: models.User = Depends(get_current_admin_user)
-):
-    """Get orders that don't have invoices yet (admin only)"""
-    try:
-        orders = await invoice_service.get_orders_without_invoices(db)
-        return {
-            "success": True,
-            "message": f"Found {len(orders)} orders without invoices",
-            "data": orders
-        }
-        
-    except Exception as e:
-        logger.error(f"Error getting orders without invoices: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get orders without invoices")

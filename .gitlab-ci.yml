@@ -199,7 +199,7 @@ deploy:production:
         
         # Pull Redis image before backend
         echo "📥 Pulling Redis image..."
-        sudo docker pull ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 || echo "⚠️ Could not pull Redis image, will use fallback"
+        sudo docker pull ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || echo "⚠️ Could not pull Redis image"
         echo "✅ Redis image pull completed"
         
         # Update docker-compose.prod.yml image tag

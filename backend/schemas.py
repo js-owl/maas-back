@@ -183,6 +183,22 @@ class DocumentStorageOut(BaseModel):
     class Config:
         from_attributes = True
 
+class InvoiceOut(BaseModel):
+    id: int
+    filename: str
+    original_filename: str
+    file_path: str
+    file_size: int
+    file_type: str
+    order_id: int
+    bitrix_document_id: Optional[int] = None
+    generated_at: Optional[datetime] = None
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 class DocumentUpload(BaseModel):
     document_category: Optional[str] = None  # e.g., "drawing", "specification", "manual"
 
@@ -215,6 +231,7 @@ class OrderCreate(BaseModel):
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
+    location: Optional[str] = None
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -296,6 +313,7 @@ class OrderUpdate(BaseModel):
     cover_id: Optional[Any] = None  # Accept any type, will be validated and converted to List[str]
     # Additional documents attached to the order
     document_ids: Optional[List[int]] = None  # List of document IDs to attach to the order
+    location: Optional[str] = None
 
     @field_validator('cover_id', mode='before')
     @classmethod
@@ -338,8 +356,10 @@ class OrderUpdate(BaseModel):
 
     @validator('status')
     def validate_status(cls, v):
-        if v is not None and v not in ['pending', 'processing', 'completed', 'cancelled']:
-            raise ValueError('Status must be one of: pending, processing, completed, cancelled')
+        # Bitrix stage names (without C1: prefix)
+        valid_statuses = ['NEW', 'PREPARATION', 'PREPAYMENT_INVOICE', 'EXECUTING', 'FINAL_INVOICE', 'WON', 'LOSE', 'APOLOGY']
+        if v is not None and v not in valid_statuses:
+            raise ValueError(f'Status must be one of: {", ".join(valid_statuses)}')
         return v
 
     @validator('height')
@@ -413,6 +433,7 @@ class OrderOut(BaseModel):
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
+    location: Optional[str] = None
     # Calculation type information
     calculation_type: Optional[str] = None  # "ml_based", "rule_based", or "unknown"
     ml_model: Optional[str] = None  # ML model name if available
@@ -422,13 +443,27 @@ class OrderOut(BaseModel):
     total_calculation_time: Optional[float] = None  # Total backend processing time
     created_at: datetime
     updated_at: datetime
-    # Additional documents attached to the order
-    document_ids: Optional[List[int]] = None  # List of document IDs
+    # User-uploaded technical documents attached to the order
+    document_ids: Optional[List[int]] = None  # List of user-uploaded document IDs
+    # Bitrix-generated invoices attached to the order
+    invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     # Removed service relationship - now using calculator service IDs directly
     message: Optional[str] = None
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                import json
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return v
+    
+    @validator('invoice_ids', pre=True)
+    def parse_invoice_ids(cls, v):
         if v is None:
             return None
         if isinstance(v, str):
@@ -531,14 +566,29 @@ class OrderOutSimple(BaseModel):
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
+    location: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    # Additional documents attached to the order
-    document_ids: Optional[List[int]] = None  # List of document IDs
+    # User-uploaded technical documents attached to the order
+    document_ids: Optional[List[int]] = None  # List of user-uploaded document IDs
+    # Bitrix-generated invoices attached to the order
+    invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     message: Optional[str] = None
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                import json
+                return json.loads(v)
+            except (json.JSONDecodeError, ValueError):
+                return None
+        return v
+    
+    @validator('invoice_ids', pre=True)
+    def parse_invoice_ids(cls, v):
         if v is None:
             return None
         if isinstance(v, str):
@@ -622,10 +672,13 @@ class OrderWithDetails(BaseModel):
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
+    location: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    # Additional documents attached to the order
-    document_ids: Optional[List[int]] = None  # List of document IDs
+    # User-uploaded technical documents attached to the order
+    document_ids: Optional[List[int]] = None  # List of user-uploaded document IDs
+    # Bitrix-generated invoices attached to the order
+    invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     # Bitrix integration
     bitrix_deal_id: Optional[int] = None
     # Removed service relationship - now using calculator service IDs directly
@@ -775,6 +828,7 @@ class CalculationRequest(BaseModel):
     k_cert: Optional[List[str]] = ["a", "f"]  # Make optional
     n_dimensions: Optional[int] = 1  # Make optional
     document_ids: Optional[List[int]] = None  # Document IDs for calculation context
+    location: Optional[str] = None
     
     @validator('service_id')
     def validate_service_id(cls, v):
@@ -846,6 +900,7 @@ class OrderCreateRequest(BaseModel):
     k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
     n_dimensions: int = 1
     document_ids: Optional[List[int]] = []
+    location: Optional[str] = None
 
 
 # Call Request schemas

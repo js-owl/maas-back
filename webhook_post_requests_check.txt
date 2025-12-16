@@ -1,0 +1,12 @@
+================================================================================
+WEBHOOK POST REQUESTS CHECK
+================================================================================
+
+Total webhook requests: 3
+Requests with test+entity_id: 0
+
+
+All Webhook Requests:
+Line 87: INFO:backend.core.middleware:INCOMING REQUEST - Method: POST, Path: /bitrix/webhook, Query: test=test2, Client IP: 172.21.0.1, Forwarded-Proto: N/A, Forwarded-Host: N/A, User-Agent: python-requests/2.32.5
+Line 89: INFO:backend.core.middleware:REQUEST COMPLETE - Method: POST, Path: /bitrix/webhook, Status: 400, Duration: 3.08ms
+Line 90: INFO:     172.21.0.1:49418 - "POST /bitrix/webhook?test=test2 HTTP/1.1" 400 Bad Request

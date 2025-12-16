@@ -6,7 +6,7 @@ import asyncio
 import httpx
 import json
 
-BASE_URL = "http://localhost:8000"
+BASE_URL = "http://localhost:7000"
 
 class CalculationsEndpointTester:
     def __init__(self, base_url: str = BASE_URL):
@@ -106,7 +106,8 @@ class CalculationsEndpointTester:
                 "cover_id": ["1"],
                 "k_otk": "1",
                 "k_cert": ["a", "f"],
-                "n_dimensions": 1
+                "n_dimensions": 1,
+                "location": "location_1"
             }
             
             response = await self.client.post(
@@ -124,6 +125,52 @@ class CalculationsEndpointTester:
                 print(f"  Calculate-price for {service} - calculator service not available")
             else:
                 print(f"  Calculate-price for {service} returned status {response.status_code}")
+
+    async def test_calculate_price_valid_requests_loc(self):
+        """Test calculate-price with valid requests for all services, check location"""
+        print(" Testing calculate-price with valid requests, check location...")
+        
+        if not self.calculator_available:
+            print(" Skipping calculation tests - calculator service not available")
+            return
+        
+        services = ["cnc-milling"]
+        location = "location_2"
+        for service in services:
+            calc_request = {
+                "service_id": service,
+                "file_id": "test-S8000_125_63_293_001_D000_02.stp-cnc-milling",
+                "file_data": "SVNPLTEwMzAzLTIxOw0KSEVBREVSOw0KLyogR2",
+                "file_name": "S8000_125_63_293_001_D000_02.stp",
+                "file_type": "stp",
+                "material_id": "alum_D16",
+                "material_form": "sheet",
+                "quantity": 1,
+                "tolerance_id": "1",
+                "finish_id": "1",
+                "cover_id": [
+                    "1"
+                ],
+                "k_otk": 1.0,
+                "location": location
+            }
+            
+            response = await self.client.post(
+                f"{self.base_url}/calculate-price",
+                json=calc_request
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                assert "total_price" in result
+                assert "service_id" in result
+                assert result["service_id"] == service
+                assert result["total_price_breakdown"]["location"] == location
+                print(f" Calculate-price for {service} passed, location response: {location}")
+            elif response.status_code == 502:
+                print(f"  Calculate-price for {service} - calculator service not available")
+            else:
+                print(f"  Calculate-price for {service} returned status {response.status_code}, location response: {location}")
     
     async def test_calculate_price_invalid_requests(self):
         """Test calculate-price with invalid requests to test error handling"""
@@ -320,6 +367,9 @@ class CalculationsEndpointTester:
             print()
             
             await self.test_calculate_price_valid_requests()
+            print()
+
+            await self.test_calculate_price_valid_requests_loc()
             print()
             
             await self.test_calculate_price_invalid_requests()

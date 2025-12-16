@@ -261,13 +261,20 @@ async def update_order(db: AsyncSession, order_id: int, order_update: schemas.Or
         except Exception as refresh_error:
             logger.error(f"Failed to refresh order {order_id} after recalculation error: {refresh_error}")
     
-    # Queue Bitrix deal update if order has a Bitrix deal
-    if updated_order and updated_order.bitrix_deal_id:
+    # Queue Bitrix deal sync (create if missing, update if exists)
+    if updated_order:
         try:
             from backend.bitrix.sync_service import bitrix_sync_service
-            await bitrix_sync_service.queue_deal_update(db, order_id)
+            if updated_order.bitrix_deal_id:
+                # Deal exists, update it
+                await bitrix_sync_service.queue_deal_update(db, order_id)
+            else:
+                # Deal doesn't exist, create it
+                await bitrix_sync_service.queue_deal_creation(
+                    db, order_id, updated_order.user_id, updated_order.file_id, None
+                )
         except Exception as e:
-            logger.warning(f"Failed to queue Bitrix deal update for order {order_id}: {e}")
+            logger.warning(f"Failed to queue Bitrix deal sync for order {order_id}: {e}")
             # Don't fail order update if Bitrix sync fails
     
     return updated_order

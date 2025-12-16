@@ -123,19 +123,47 @@ class FunnelManager:
                             self.status_mapping[stage_id] = order_status
                             break
                     
-                    # Also map by common stage semantics/names
+                    # Also map by common stage semantics/names and stage IDs
+                    # Map by stage ID first (more reliable)
+                    if stage_id == "C1:NEW":
+                        if "pending" not in self.stage_mapping:
+                            self.stage_mapping["pending"] = stage_id
+                            self.status_mapping[stage_id] = "pending"
+                    elif stage_id in ["C1:PREPARATION", "C1:PREPAYMENT_INVOICE", "C1:EXECUTING", "C1:FINAL_INVOICE"]:
+                        # All work-in-progress stages map to processing
+                        if "processing" not in self.stage_mapping or self.stage_mapping.get("processing") != "C1:EXECUTING":
+                            # Prefer EXECUTING as the main processing stage, but map others too
+                            if stage_id == "C1:EXECUTING":
+                                self.stage_mapping["processing"] = stage_id
+                            self.status_mapping[stage_id] = "processing"
+                    elif stage_id == "C1:WON":
+                        if "completed" not in self.stage_mapping:
+                            self.stage_mapping["completed"] = stage_id
+                            self.status_mapping[stage_id] = "completed"
+                    elif stage_id in ["C1:LOSE", "C1:APOLOGY"]:
+                        # Both lost stages map to cancelled
+                        if "cancelled" not in self.stage_mapping or self.stage_mapping.get("cancelled") != "C1:LOSE":
+                            # Prefer LOSE as the main cancelled stage, but map APOLOGY too
+                            if stage_id == "C1:LOSE":
+                                self.stage_mapping["cancelled"] = stage_id
+                            self.status_mapping[stage_id] = "cancelled"
+                    
+                    # Fallback: Map by stage name (case-insensitive match)
+                    stage_name_lower = stage_name.lower()
                     # "Новая" or "New" -> pending
-                    if stage_name in ["Новая", "New", "New Order"] and "pending" not in self.stage_mapping:
+                    if stage_name_lower in ["новая", "new", "new order"] and "pending" not in self.stage_mapping:
                         self.stage_mapping["pending"] = stage_id
+                        self.status_mapping[stage_id] = "pending"
                     # "В работе" or "In Work" or "In Production" -> processing
-                    elif stage_name in ["В работе", "In Work", "In Production", "EXECUTING"] and "processing" not in self.stage_mapping:
-                        self.stage_mapping["processing"] = stage_id
+                    elif stage_name_lower in ["в работе", "in work", "in production", "executing", "подготовка документов", "cчёт на предоплату", "финальный счёт"] and stage_id not in self.status_mapping:
+                        self.status_mapping[stage_id] = "processing"
                     # "Сделка успешна" or "Won" or "Completed" -> completed
-                    elif stage_name in ["Сделка успешна", "Won", "Completed"] and "completed" not in self.stage_mapping:
+                    elif stage_name_lower in ["сделка успешна", "won", "completed"] and "completed" not in self.stage_mapping:
                         self.stage_mapping["completed"] = stage_id
-                    # "Сделка провалена" or "Lost" or "Cancelled" -> cancelled
-                    elif stage_name in ["Сделка провалена", "Lost", "Cancelled"] and "cancelled" not in self.stage_mapping:
-                        self.stage_mapping["cancelled"] = stage_id
+                        self.status_mapping[stage_id] = "completed"
+                    # "Сделка провалена" or "Lost" or "Cancelled" or "Анализ причины провала" -> cancelled
+                    elif stage_name_lower in ["сделка провалена", "lost", "cancelled", "анализ причины провала"] and stage_id not in self.status_mapping:
+                        self.status_mapping[stage_id] = "cancelled"
             
             logger.info(f"Loaded {len(stages)} stages for MaaS funnel")
             logger.debug(f"Stage mapping: {self.stage_mapping}")
