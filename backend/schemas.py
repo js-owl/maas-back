@@ -888,6 +888,8 @@ class DocumentUploadRequest(BaseModel):
 # Calculator accepts either file_id OR dimensions to trigger different algorithms
 class OrderCreateRequest(BaseModel):
     service_id: str
+    # Optional human‑readable order name; router expects this field
+    order_name: Optional[str] = None
     file_id: Optional[int] = None  # Made optional - can send dimensions instead
     quantity: int = 1
     length: Optional[int] = None
