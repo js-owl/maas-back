@@ -213,6 +213,7 @@ class DocumentUploadResponse(BaseModel):
 # Order schemas
 class OrderCreate(BaseModel):
     service_id: str  # Calculator service ID (e.g., "cnc_lathe", "cnc_milling")
+    order_name: Optional[str] = None  # Order name
     quantity: int = 1
     # Accept either JSON string or separate fields
     #dimensions: Optional[str] = None  # COMMENTED OUT: dimensions field no longer needed when length/width/height provided
@@ -296,6 +297,7 @@ class OrderCreate(BaseModel):
 
 class OrderUpdate(BaseModel):
     service_id: Optional[str] = None  # Calculator service ID
+    order_name: Optional[str] = None  # Order name
     quantity: Optional[int] = None
     status: Optional[str] = None
     special_instructions: Optional[str] = None
@@ -381,6 +383,7 @@ class OrderOut(BaseModel):
     user_id: int
     service_id: str  # Calculator service ID
     file_id: Optional[int] = None  # File ID may be None if file was deleted
+    order_name: Optional[str] = None  # Order name
     quantity: int
     #dimensions: str  # COMMENTED OUT: dimensions field no longer needed when length/width/height provided
     length: Optional[int]
@@ -515,6 +518,7 @@ class OrderOutSimple(BaseModel):
     user_id: int
     service_id: str  # Calculator service ID
     file_id: Optional[int] = None  # File ID may be None if file was deleted
+    order_name: Optional[str] = None  # Order name
     quantity: int
     #dimensions: str  # COMMENTED OUT: dimensions field no longer needed when length/width/height provided
     length: Optional[int]
@@ -621,6 +625,7 @@ class OrderWithDetails(BaseModel):
     user_id: int
     service_id: str  # Calculator service ID
     file_id: int
+    order_name: Optional[str] = None  # Order name
     quantity: int
     #dimensions: str  # COMMENTED OUT: dimensions field no longer needed when length/width/height provided
     length: Optional[int]

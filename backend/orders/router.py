@@ -63,6 +63,7 @@ async def create_order(
         # Convert OrderCreateRequest to OrderCreate
         order_data = schemas.OrderCreate(
             service_id=request_data.service_id,
+            order_name=request_data.order_name,
             quantity=request_data.quantity,
             length=request_data.length,
             width=request_data.width,

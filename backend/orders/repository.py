@@ -32,6 +32,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         user_id=user_id,
         file_id=file_id,
         service_id=order.service_id,  # Store calculator service ID directly
+        order_name=order.order_name,  # Order name
         quantity=order.quantity,
         length=order.length,
         width=order.width,

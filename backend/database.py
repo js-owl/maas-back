@@ -117,6 +117,8 @@ async def ensure_order_new_columns() -> None:
                 order_alters.append("ALTER TABLE orders ADD COLUMN invoice_ids TEXT")
             if 'location' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
+            if 'order_name' not in order_cols:
+                order_alters.append(text("ALTER TABLE orders ADD COLUMN order_name TEXT"))
             for stmt in order_alters:
                 if isinstance(stmt, str):
                     await session.execute(text(stmt))

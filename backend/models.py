@@ -101,6 +101,7 @@ class Order(Base):
     user_id = Column(Integer, ForeignKey('users.id'))
     service_id = Column(String)  # Calculator service ID (e.g., "cnc_lathe", "cnc_milling")
     file_id = Column(Integer, ForeignKey('files.id'))
+    order_name = Column(String, nullable=True)  # Order name
     quantity = Column(Integer, default=1)
     dimensions = Column(String, nullable=True)  # JSON: {"length": 100, "width": 50, "height": 25} - deprecated, use length/width/height
     # New normalized dimension fields for easier querying and calculations
