@@ -20,6 +20,7 @@ from backend.orders.service import (
     recalculate_order_price,
     sync_orders_with_bitrix
 )
+from backend.kits.service import add_order_to_kit
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -87,6 +88,18 @@ async def create_order(
             db_order = await create_order_with_calculation(db, current_user.id, order_data, request_data.file_id)
         else:
             db_order = await create_order_with_dimensions(db, current_user.id, order_data)
+        
+        # Attach to kit if provided
+        if request_data.kit_id is not None:
+            try:
+                await add_order_to_kit(
+                    db=db,
+                    kit_id=request_data.kit_id,
+                    order_id=db_order.order_id,
+                    current_user=current_user
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
         
         # Attach documents if provided
         if request_data.document_ids:

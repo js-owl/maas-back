@@ -908,6 +908,7 @@ class OrderCreateRequest(BaseModel):
     n_dimensions: int = 1
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
+    kit_id: Optional[int] = None
 
 
 # Call Request schemas
@@ -949,3 +950,67 @@ class HealthResponse(BaseModel):
     version: str
     timestamp: datetime
     services: Optional[Dict[str, str]] = None
+
+# Create kit schemas
+class KitCreate(BaseModel):
+    kit_name: Optional[str] = None
+    order_ids: List[int]
+    user_id: int
+    quantity: int = 1
+    status: Optional[str] = "NEW"
+    bitrix_deal_id: Optional[int] = None
+    location: Optional[str] = None
+
+    @validator("order_ids")
+    def validate_order_ids(cls, v):
+        if not v:
+            raise ValueError("order_ids must be a non-empty list")
+        return [int(x) for x in v]
+
+    @validator("quantity")
+    def validate_quantity(cls, v):
+        if v < 1:
+            raise ValueError("quantity must be >= 1")
+        return v
+
+class KitOut(BaseModel):
+    kit_id: int
+    order_ids: List[int]
+    user_id: int
+    kit_name: Optional[str] = None
+    quantity: int
+    kit_price: float | None = None
+    total_kit_price: float | None = None
+
+    delivery_price: float | None = None
+
+    status: str
+    created_at: datetime
+    updated_at: datetime
+    bitrix_deal_id: Optional[int] = None
+    location: Optional[str] = None
+
+    @validator("order_ids", pre=True)
+    def parse_order_ids(cls, v):
+        # Если прилетает TEXT из БД — это JSON-строка
+        if v is None:
+            return []
+        if isinstance(v, str):
+            try:
+                parsed = json.loads(v)
+                return parsed if isinstance(parsed, list) else []
+            except Exception:
+                return []
+        return v
+
+    class Config:
+        from_attributes = True
+
+
+class KitUpdate(BaseModel):
+    kit_name: Optional[str] = None
+    quantity: Optional[int] = None
+    status: Optional[str] = None
+    bitrix_deal_id: Optional[int] = None
+    location: Optional[str] = None
+    order_ids: Optional[List[int]] = None

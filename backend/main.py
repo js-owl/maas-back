@@ -19,7 +19,10 @@ from backend.core.error_handlers import (
     general_exception_handler
 )
 from fastapi.exceptions import RequestValidationError
-from backend.database import seed_admin, ensure_order_new_columns, ensure_invoices_table, AsyncSessionLocal
+from backend.database import (
+    seed_admin, ensure_order_new_columns, ensure_invoices_table, 
+    ensure_kits_table, AsyncSessionLocal
+)
 from sqlalchemy import select, func
 from fastapi import Request
 from backend.utils.logging import get_logger
@@ -147,6 +150,7 @@ from backend.orders.router import router as orders_router
 from backend.bitrix.router import router as bitrix_router
 from backend.bitrix.webhook_router import router as bitrix_webhook_router
 from backend.call_requests.router import router as call_requests_router
+from backend.kits.router import router as kits_router
 
 # Register routers
 app.include_router(auth_router)
@@ -159,6 +163,7 @@ app.include_router(orders_router)
 app.include_router(bitrix_router)
 app.include_router(bitrix_webhook_router)
 app.include_router(call_requests_router)
+app.include_router(kits_router)
 
 # Root endpoints
 @app.get("/", tags=["Root"])
@@ -424,6 +429,7 @@ async def startup_event():
     # Run database migrations
     await ensure_order_new_columns()
     await ensure_invoices_table()
+    await ensure_kits_table()
     
     # Automatically migrate invoices from documents table if needed
     await auto_migrate_invoices_if_needed()

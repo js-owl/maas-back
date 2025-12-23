@@ -11,6 +11,8 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
+from tests.test_db_migrations import DatabaseMigrationsTester
+from tests.test_kits_endpoints import KitsEndpointTester
 from tests.test_api_comprehensive import ModularAPITester
 from tests.test_auth_endpoints import AuthEndpointTester
 from tests.test_calculations_endpoints import CalculationsEndpointTester
@@ -60,6 +62,8 @@ class TestRunner:
         
         # Define test suites
         test_suites = [
+            (DatabaseMigrationsTester, "DB Migrations & Persistence"),
+            (KitsEndpointTester, "Kits Endpoints"),
             (ModularAPITester, "Comprehensive API Tests"),
             (AuthEndpointTester, "Authentication Endpoints"),
             (CalculationsEndpointTester, "Calculations Endpoints"),

@@ -119,6 +119,8 @@ async def ensure_order_new_columns() -> None:
                 order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
             if 'order_name' not in order_cols:
                 order_alters.append(text("ALTER TABLE orders ADD COLUMN order_name TEXT"))
+            if 'kit_id' not in order_cols:
+                order_alters.append("ALTER TABLE orders ADD COLUMN kit_id INTEGER")
             for stmt in order_alters:
                 if isinstance(stmt, str):
                     await session.execute(text(stmt))
@@ -336,3 +338,54 @@ async def ensure_demo_files() -> None:
             await upsert_demo(special_id, special_filename)
         except Exception:
             await session.rollback()
+
+async def ensure_kits_table() -> None:
+    """Ensure kits table exists and has required columns (SQLite friendly)."""
+    async with AsyncSessionLocal() as session:
+        try:
+            # Check if kits table exists
+            result = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='kits'")
+            )
+            table_exists = result.first() is not None
+
+            if not table_exists:
+                from backend.models import Kit
+                async with engine.begin() as conn:
+                    await conn.run_sync(Kit.__table__.create)
+                logger.info("Created kits table")
+                return
+
+            # If exists — ensure columns (future-proof pattern)
+            result = await session.execute(text("PRAGMA table_info('kits')"))
+            cols = {row[1] for row in result}
+            alters = []
+
+            required = {
+                "order_ids": "TEXT",
+                "user_id": "INTEGER",
+                "kit_name": "VARCHAR",
+                "quantity": "INTEGER",
+                "kit_price": "REAL",
+                "total_kit_price": "REAL",
+                "delivery_price": "REAL",
+                "status": "VARCHAR",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+                "bitrix_deal_id": "INTEGER",
+                "location": "TEXT",
+            }
+
+            for col_name, col_type in required.items():
+                if col_name not in cols:
+                    alters.append(f"ALTER TABLE kits ADD COLUMN {col_name} {col_type}")
+
+            for stmt in alters:
+                await session.execute(text(stmt))
+
+            if alters:
+                await session.commit()
+                logger.info(f"Added {len(alters)} columns to kits table")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error ensuring kits table: {e}", exc_info=True)

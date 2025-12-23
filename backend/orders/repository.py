@@ -5,10 +5,11 @@ Database operations for order management
 import json
 from typing import List, Optional, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from sqlalchemy.orm import selectinload
 from backend import models, schemas
 from backend.utils.logging import get_logger
+from backend.kits.repository import remove_order_from_user_kits
 
 logger = get_logger(__name__)
 
@@ -27,7 +28,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
     calc_total_price_breakdown = None
     if isinstance(calc, dict) and 'total_price_breakdown' in calc:
         calc_total_price_breakdown = calc.get('total_price_breakdown')
-
+    
     db_order = models.Order(
         user_id=user_id,
         file_id=file_id,
@@ -209,6 +210,12 @@ async def delete_order(db: AsyncSession, order_id: int) -> bool:
     order.status = 'cancelled'
     db.add(order)
     await db.commit()
+
+    try:
+        await remove_order_from_user_kits(db, user_id=order.user_id, order_id=order_id)
+    except Exception as e:
+        logger.warning(f"Failed to remove order {order_id} from kits: {e}")
+
     return True
 
 
@@ -217,6 +224,9 @@ async def hard_delete_order(db: AsyncSession, order_id: int) -> bool:
     order = await get_order_by_id(db, order_id)
     if not order:
         return False
+    
+    await remove_order_from_user_kits(db, user_id=order.user_id, order_id=order_id)
+
     await db.delete(order)
     await db.commit()
     return True
