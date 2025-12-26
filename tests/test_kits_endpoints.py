@@ -52,16 +52,6 @@ class KitsEndpointTester:
             )
             await session.commit()
 
-    async def _db_get_kit_prices(self, kit_id: int):
-        async with AsyncSessionLocal() as session:
-            res = await session.execute(
-                text("SELECT kit_price, total_kit_price FROM kits WHERE kit_id = :kid"),
-                {"kid": int(kit_id)},
-            )
-            row = res.first()
-            return (row[0], row[1]) if row else (None, None)
-
-
     async def __aenter__(self):
         return self
 
@@ -151,6 +141,38 @@ class KitsEndpointTester:
         data = resp.json()
         assert "order_id" in data
         return data["order_id"]
+
+    async def _create_order_in_kit(self, token: str, kit_id: int, service_id: str = "cnc-milling") -> int:
+        headers = {"Authorization": f"Bearer {token}"}
+
+        order_request = {
+            "service_id": service_id,
+            "file_id": 1,
+            "quantity": 1,
+            "length": 100,
+            "width": 50,
+            "height": 25,
+            "material_id": "alum_D16",
+            "material_form": "rod",
+            "tolerance_id": "1",
+            "finish_id": "1",
+            "cover_id": ["1"],
+            "k_otk": "1",
+            "k_cert": ["a", "f"],
+            "n_dimensions": 1,
+            "document_ids": [],
+            "kit_id": int(kit_id),  # <-- важно
+        }
+
+        resp = await self.client.post(
+            f"{self.base_url}/orders",
+            json=order_request,
+            headers=headers,
+        )
+        assert resp.status_code == 200, f"Order creation in kit failed: {resp.status_code} {resp.text}"
+        data = resp.json()
+        assert "order_id" in data
+        return int(data["order_id"])
 
     async def test_kits_endpoints_available(self):
         """Smoke: /kits endpoints should not be 404 if router is connected."""
@@ -836,6 +858,61 @@ class KitsEndpointTester:
 
         print(" Kit soft delete passed")
 
+    async def test_add_order_to_existing_kit_updates_price(self):
+        print(" Testing adding order to existing kit updates kit_price and order_ids.")
+
+        if not self.auth_token:
+            await self.setup_auth()
+
+        headers = {"Authorization": f"Bearer {self.auth_token}"}
+
+        o1 = await self._create_order(self.auth_token, "cnc-milling")
+        await self._db_set_order_total_price(o1, 100.0)
+
+        rk = await self.client.post(
+            f"{self.base_url}/kits",
+            json={
+                "kit_name": "kit-add-order",
+                "order_ids": [o1],
+                "user_id": self.user_id,
+                "quantity": 2,
+                "location": "test",
+                "status": "NEW",
+                "bitrix_deal_id": None,
+            },
+            headers=headers,
+        )
+        assert rk.status_code == 200, f"Kit creation failed: {rk.status_code} {rk.text}"
+        kit_id = int(rk.json()["kit_id"])
+
+        rg0 = await self.client.get(f"{self.base_url}/kits/{kit_id}", headers=headers)
+        assert rg0.status_code == 200, f"Kit get failed: {rg0.status_code} {rg0.text}"
+        kit0 = rg0.json()
+
+        kp0 = float(kit0.get("kit_price") or 0.0)
+        tkp0 = float(kit0.get("total_kit_price") or 0.0)
+        assert abs(kp0 - 100.0) < 1e-6, f"kit_price wrong before add: got={kp0}, expected=100.0"
+        assert abs(tkp0 - 200.0) < 1e-6, f"total_kit_price wrong before add: got={tkp0}, expected=200.0"
+
+        o2 = await self._create_order_in_kit(self.auth_token, kit_id, "printing")
+        await self._db_set_order_total_price(o2, 250.0)
+
+        rg1 = await self.client.get(f"{self.base_url}/kits/{kit_id}", headers=headers)
+        assert rg1.status_code == 200, f"Kit get failed after add: {rg1.status_code} {rg1.text}"
+        kit1 = rg1.json()
+
+        kp1 = float(kit1.get("kit_price") or 0.0)
+        tkp1 = float(kit1.get("total_kit_price") or 0.0)
+        assert abs(kp1 - 350.0) < 1e-6, f"kit_price wrong after add: got={kp1}, expected=350.0"
+        assert abs(tkp1 - 700.0) < 1e-6, f"total_kit_price wrong after add: got={tkp1}, expected=700.0"
+
+        returned = kit1.get("order_ids")
+        if isinstance(returned, str):
+            returned = json.loads(returned)
+        assert sorted(returned) == sorted([o1, o2]), f"order_ids mismatch after add: got={returned}, expected={[o1, o2]}"
+
+        print(" Add order to existing kit updates price passed")
+
     async def test_admin_hard_delete_kit_unlinks_orders(self):
         print(" Testing admin hard delete kit unlinks orders")
 
@@ -966,6 +1043,9 @@ class KitsEndpointTester:
             print()
 
             await self.test_admin_hard_delete_kit_unlinks_orders()
+            print()
+
+            await self.test_add_order_to_existing_kit_updates_price()
             print()
 
             await self.test_admin_list_all_kits()

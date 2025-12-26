@@ -56,10 +56,6 @@ async def create_kit_from_orders(
         location=location,
         order_ids=order_ids,
     )
-
-    for o in orders:
-        o.kit_id = kit.kit_id
-        db.add(o)
     await db.commit()
 
     # recalc prices

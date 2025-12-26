@@ -300,6 +300,7 @@ class OrderUpdate(BaseModel):
     order_name: Optional[str] = None  # Order name
     quantity: Optional[int] = None
     status: Optional[str] = None
+    front_status: Optional[str] = None
     special_instructions: Optional[str] = None
     material_id: Optional[str] = None  # Material ID from calculator service
     material_form: Optional[str] = None  # Material form
@@ -355,8 +356,16 @@ class OrderUpdate(BaseModel):
         if v is not None and v < 1:
             raise ValueError('Quantity must be at least 1')
         return v
-
-    @validator('status')
+    
+    @model_validator(mode="after")
+    def compute_front_status(self):
+        try:
+            self.front_status = self.status.split(":")[1]
+        except:
+            self.front_status = self.status
+        return self
+    
+    @validator('front_status')
     def validate_status(cls, v):
         # Bitrix stage names (without C1: prefix)
         valid_statuses = ['NEW', 'PREPARATION', 'PREPAYMENT_INVOICE', 'EXECUTING', 'FINAL_INVOICE', 'WON', 'LOSE', 'APOLOGY']
@@ -396,6 +405,7 @@ class OrderOut(BaseModel):
     special_instructions: Optional[str]
     total_price_breakdown: Optional[Dict[str, Any]]
     status: str
+    front_status: Optional[str] = None
     # Calculation coefficients
     k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
     tolerance_id: str = "1"
@@ -453,6 +463,14 @@ class OrderOut(BaseModel):
     # Removed service relationship - now using calculator service IDs directly
     message: Optional[str] = None
     
+    @model_validator(mode="after")
+    def compute_front_status(self):
+        try:
+            self.front_status = self.status.split(":")[1]
+        except:
+            self.front_status = self.status
+        return self
+        
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
         if v is None:
@@ -776,6 +794,15 @@ class OrderOnlyResponse(BaseModel):
 # External CRM order status update schema
 class OrderStatusUpdate(BaseModel):
     status: str  # Just validate it's a string, no specific values restriction
+    front_status: Optional[str] = None
+
+    @model_validator(mode="after")
+    def compute_front_status(self):
+        try:
+            self.front_status = self.status.split(":")[1]
+        except:
+            self.front_status = self.status
+        return self
 
 # Call request schema
 class CallRequestCreate(BaseModel):
@@ -908,7 +935,7 @@ class OrderCreateRequest(BaseModel):
     n_dimensions: int = 1
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
-    kit_id: Optional[int] = None
+    kit_id: Optional[int] = None # This attr for future. After transit from order_ids in kits
 
 
 # Call Request schemas
@@ -980,6 +1007,8 @@ class KitOut(BaseModel):
     kit_name: Optional[str] = None
     quantity: int
     kit_price: float | None = None
+    
+    # computed
     total_kit_price: float | None = None
 
     delivery_price: float | None = None
@@ -987,12 +1016,13 @@ class KitOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+
     bitrix_deal_id: Optional[int] = None
+    
     location: Optional[str] = None
 
     @validator("order_ids", pre=True)
     def parse_order_ids(cls, v):
-        # Если прилетает TEXT из БД — это JSON-строка
         if v is None:
             return []
         if isinstance(v, str):
@@ -1003,14 +1033,25 @@ class KitOut(BaseModel):
                 return []
         return v
 
+    @model_validator(mode="after")
+    def compute_total_kit_price(self):
+        """
+        total_kit_price = kit_price * quantity
+        """
+        if self.kit_price is not None and self.quantity is not None:
+            self.total_kit_price = self.kit_price * self.quantity
+        else:
+            self.total_kit_price = 0.0
+        return self
+    
     class Config:
         from_attributes = True
 
 
 class KitUpdate(BaseModel):
+    order_ids: Optional[List[int]] = None
     kit_name: Optional[str] = None
     quantity: Optional[int] = None
     status: Optional[str] = None
     bitrix_deal_id: Optional[int] = None
     location: Optional[str] = None
-    order_ids: Optional[List[int]] = None

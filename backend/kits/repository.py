@@ -8,6 +8,22 @@ from backend import models
 EXCLUDED_ORDER_STATUSES = {"cancelled"}
 
 
+def _safe_parse_order_ids(value) -> List[int]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [int(x) for x in value]
+    if isinstance(value, str):
+        try:
+            v = json.loads(value)
+            if isinstance(v, list):
+                return [int(x) for x in v]
+            return []
+        except Exception:
+            return []
+    return []
+
+
 async def create_kit(
     db: AsyncSession,
     *,
@@ -88,24 +104,12 @@ async def update_kit_order_ids(db: AsyncSession, kit: models.Kit, order_ids: Lis
     await db.refresh(kit)
     return kit
 
-def _safe_parse_order_ids(value) -> List[int]:
-    if value is None:
-        return []
-    if isinstance(value, list):
-        return [int(x) for x in value]
-    if isinstance(value, str):
-        try:
-            v = json.loads(value)
-            if isinstance(v, list):
-                return [int(x) for x in v]
-            return []
-        except Exception:
-            return []
-    return []
-
 
 async def remove_order_from_user_kits(db: AsyncSession, *, user_id: int, order_id: int) -> int:
-    res = await db.execute(select(models.Kit).where(models.Kit.user_id == user_id))
+    res = await db.execute(
+        select(models.Kit)
+        .where(models.Kit.user_id == user_id)
+    )
     kits = res.scalars().all()
 
     updated = 0
@@ -119,24 +123,29 @@ async def remove_order_from_user_kits(db: AsyncSession, *, user_id: int, order_i
 
     if updated:
         await db.commit()
+    
     return updated
 
 
-async def recalc_kit_prices(db, kit_id: int) -> models.Kit:
+async def recalc_kit_prices(db: AsyncSession, kit_id: int) -> models.Kit:
     kit = await db.get(models.Kit, kit_id)
     if not kit:
         raise ValueError("Kit not found")
 
+    order_ids = _safe_parse_order_ids(kit.order_ids)
+    if not order_ids:
+        kit.kit_price = 0.0
+        await db.commit()
+        return kit
+
     res = await db.execute(
         select(func.coalesce(func.sum(models.Order.total_price), 0.0))
-        .where(models.Order.kit_id == kit_id)
+        .where(models.Order.order_id.in_(order_ids))
         .where(models.Order.status.notin_(EXCLUDED_ORDER_STATUSES))
     )
-    kit_price = float(res.scalar() or 0.0)
 
+    kit_price = float(res.scalar() or 0.0)
     kit.kit_price = kit_price
-    qty = int(kit.quantity or 1)
-    kit.total_kit_price = float(kit_price * max(qty, 1))
 
     db.add(kit)
     await db.commit()

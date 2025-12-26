@@ -367,7 +367,6 @@ async def ensure_kits_table() -> None:
                 "kit_name": "VARCHAR",
                 "quantity": "INTEGER",
                 "kit_price": "REAL",
-                "total_kit_price": "REAL",
                 "delivery_price": "REAL",
                 "status": "VARCHAR",
                 "created_at": "DATETIME",
