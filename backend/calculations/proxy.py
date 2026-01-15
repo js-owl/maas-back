@@ -113,9 +113,17 @@ async def proxy_delete_request(
 
 
 async def get_services(request: Request = None) -> List[str]:
-    """Get available manufacturing services from calculator service"""
+    """Get all available manufacturing services from calculator service"""
     response = await proxy_get_request("services", request=request)
     # 7000 server v3.1.0 returns {"services": ["printing", "cnc-milling", "cnc-lathe", "painting"]}
+    if isinstance(response, dict) and "services" in response:
+        return response["services"]
+    return response
+
+
+async def get_other_services(request: Request = None) -> List[str]:
+    """Get available other manufacturing services (without auto price calculation) from calculator service"""
+    response = await proxy_get_request("other_services", request=request)
     if isinstance(response, dict) and "services" in response:
         return response["services"]
     return response

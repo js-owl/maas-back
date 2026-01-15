@@ -13,7 +13,7 @@ from backend import models, schemas
 from backend.core.dependencies import get_db
 from backend.auth.service import decode_access_token
 from backend.calculations.service import call_calculator_service, analyze_stp_file
-from backend.calculations.proxy import get_services, get_materials, get_coefficients, get_locations
+from backend.calculations.proxy import get_services, get_other_services, get_materials, get_coefficients, get_locations
 from backend.utils.logging import get_logger
 from sqlalchemy import select
 
@@ -334,8 +334,14 @@ async def calculate_price(
 # Proxy endpoints
 @router.get('/services', tags=["Services"])
 async def list_services(request: Request):
-    """Get available manufacturing services from calculator service (single source of truth)"""
+    """Get all available manufacturing services from calculator service (single source of truth)"""
     return await get_services(request)
+
+
+@router.get('/other_services', tags=["Services"])
+async def get_calculator_other_services(request: Request):
+    """Get other available manufacturing services from calculator service without auto calculation (single source of truth)"""
+    return await get_other_services(request)
 
 
 @router.get('/materials', tags=["Calculator"])
