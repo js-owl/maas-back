@@ -250,7 +250,8 @@ async def calculate_price(
             file_data=file_data,
             file_name=file_name,
             file_type=file_type,
-            location=location
+            location=location,
+            document_ids=request_data.document_ids
         )
         # End timing calculator service call
         calc_service_end_time = time.time()

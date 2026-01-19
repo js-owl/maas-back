@@ -83,10 +83,10 @@ async def delete_document(db: AsyncSession, document_id: int) -> bool:
 
 async def get_document_download_path(document_record: models.DocumentStorage) -> Optional[Path]:
     """Get document path for download"""
-    if not document_record or not document_record.document_path:
+    if not document_record or not document_record.file_path:
         return None
     
-    document_path = Path(document_record.document_path)
+    document_path = Path(document_record.file_path)
     if document_path.exists():
         return document_path
     

@@ -103,6 +103,7 @@ class Order(Base):
     file_id = Column(Integer, ForeignKey('files.id'))
     kit_id = Column(Integer, ForeignKey("kits.kit_id"), nullable=True, index=True)
     order_name = Column(String, nullable=True)  # Order name
+    order_code = Column(String, nullable=True)
     quantity = Column(Integer, default=1)
     dimensions = Column(String, nullable=True)  # JSON: {"length": 100, "width": 50, "height": 25} - deprecated, use length/width/height
     # New normalized dimension fields for easier querying and calculations

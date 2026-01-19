@@ -27,6 +27,9 @@ A comprehensive FastAPI backend for a manufacturing service platform that suppor
    # or
    venv\Scripts\activate     # Windows
    pip install -r requirements.txt
+   # or
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+   .\venv\Scripts\Activate.ps1
    ```
 
 2. **Start the backend:**

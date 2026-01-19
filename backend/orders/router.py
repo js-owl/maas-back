@@ -65,6 +65,7 @@ async def create_order(
         order_data = schemas.OrderCreate(
             service_id=request_data.service_id,
             order_name=request_data.order_name,
+            order_code=request_data.order_code,
             quantity=request_data.quantity,
             length=request_data.length,
             width=request_data.width,
@@ -80,7 +81,8 @@ async def create_order(
             k_otk=request_data.k_otk,
             k_cert=request_data.k_cert,
             n_dimensions=request_data.n_dimensions,
-            location=request_data.location
+            location=request_data.location,
+            document_ids=request_data.document_ids
         )
         
         # Create order with calculation - use appropriate function based on file_id

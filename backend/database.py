@@ -119,6 +119,8 @@ async def ensure_order_new_columns() -> None:
                 order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
             if 'order_name' not in order_cols:
                 order_alters.append(text("ALTER TABLE orders ADD COLUMN order_name TEXT"))
+            if 'order_code' not in order_cols:
+                order_alters.append(text("ALTER TABLE orders ADD COLUMN order_code TEXT"))
             if 'kit_id' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN kit_id INTEGER")
             for stmt in order_alters:

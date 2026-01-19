@@ -34,6 +34,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         file_id=file_id,
         service_id=order.service_id,  # Store calculator service ID directly
         order_name=order.order_name,  # Order name
+        order_code=order.order_code,
         quantity=order.quantity,
         length=order.length,
         width=order.width,
@@ -70,7 +71,8 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         ml_model=calc.get('ml_model') if calc else None,
         ml_confidence=calc.get('ml_confidence') if calc else None,
         calculation_time=calc.get('calculation_time') if calc else None,
-        total_calculation_time=calc.get('total_calculation_time') if calc else None
+        total_calculation_time=calc.get('total_calculation_time') if calc else None,
+        document_ids=json.dumps(order.document_ids)
     )
     
     db.add(db_order)

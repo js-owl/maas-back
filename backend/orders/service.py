@@ -78,7 +78,8 @@ async def create_order_with_calculation(
             timeout=10.0,
             file_data=file_data,
             file_name=file_name,
-            file_type=file_type
+            file_type=file_type,
+            document_ids=order_data.document_ids
         )
         
         # End timing calculator service call
@@ -163,7 +164,8 @@ async def create_order_with_dimensions(
             cover_id=order_data.cover_id,
             k_otk=order_data.k_otk,
             k_cert=order_data.k_cert,
-            timeout=10.0
+            timeout=10.0,
+            document_ids=order_data.document_ids
             # No file_data, file_name, file_type for dimensions-only
         )
         

@@ -36,7 +36,8 @@ async def call_calculator_service(
     file_data: Optional[str] = None,
     file_name: Optional[str] = None,
     file_type: Optional[str] = None,
-    location: Optional[str] = None
+    location: Optional[str] = None,
+    document_ids: Optional[str] = None
 ) -> dict:
     """Universal function to call the external calculator service using unified /calculate-price endpoint"""
     
@@ -83,8 +84,13 @@ async def call_calculator_service(
                 "file_type": file_type
             })
         
+        if document_ids:
+            post_data.update({
+                "document_ids": document_ids
+            })
+
         # Log outgoing request payload to calculator
-        logger.info(f"Calculator request payload: {post_data}")
+        logger.info(f"=======================Calculator request payload: {post_data}")
         
         # Prepare headers for calculator service call
         headers = {"Content-Type": "application/json"}
