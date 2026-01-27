@@ -6,7 +6,7 @@ from backend.auth.dependencies import get_current_user, get_current_admin_user
 from backend import models, schemas
 from backend.kits.service import (
     create_kit_from_orders, get_kit, list_my_kits, update_kit,
-    list_all_kits, delete_kit, hard_delete_kit
+    list_all_kits, delete_kit, hard_delete_kit, get_kit_calculation_summary
 )
 
 router = APIRouter()
@@ -47,6 +47,19 @@ async def get_kit_endpoint(
 ):
     try:
         return await get_kit(db, kit_id=kit_id, current_user=current_user)
+    except ValueError as e:
+        msg = str(e)
+        code = 404 if "not found" in msg.lower() else 403 if "access" in msg.lower() else 400
+        raise HTTPException(status_code=code, detail=msg)
+    
+@router.get("/kits/{kit_id}/calculation_summary", response_model=schemas.KitSummaryResponse, tags=["Kits"])
+async def get_kit_calculation_summary_endpoint(
+    kit_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        return await get_kit_calculation_summary(db, kit_id=kit_id, current_user=current_user)
     except ValueError as e:
         msg = str(e)
         code = 404 if "not found" in msg.lower() else 403 if "access" in msg.lower() else 400

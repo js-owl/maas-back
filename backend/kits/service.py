@@ -193,6 +193,82 @@ async def update_kit(
     return kit
 
 
+async def get_kit_calculation_summary(
+    db: AsyncSession,
+    kit_id: int,
+    current_user: models.User
+) -> schemas.KitSummaryResponse:
+    
+    # check user, update kit
+    kit = await get_kit(db, kit_id=kit_id, current_user=current_user)
+
+    # parse order_ids
+    if kit.order_ids is None:
+        order_ids: List[int] = []
+    elif isinstance(kit.order_ids, str):
+        try:
+            parsed = json.loads(kit.order_ids)
+            order_ids = [int(x) for x in parsed] if isinstance(parsed, list) else []
+        except Exception:
+            order_ids = []
+    else:
+        order_ids = [int(x) for x in kit.order_ids]
+
+    if not order_ids:
+        kit_price = float(kit.kit_price or 0.0)
+        return schemas.KitSummaryResponse(
+            kit_id=kit.kit_id,
+            kit_name=kit.kit_name,
+            kit_quantity=kit.quantity,
+            orders=[],
+            kit_price=kit_price,
+            total_kit_price=kit_price * (kit.quantity or 0),
+        )
+
+    # load orders
+    res = await db.execute(
+        select(models.Order).where(models.Order.order_id.in_(order_ids))
+    )
+    orders = res.scalars().all()
+
+    # build summary
+    items: List[schemas.OrderSummaryItem] = []
+    total_kit_price_with_taxes = 0.0
+
+    # order by kit.order_ids
+    by_id = {o.order_id: o for o in orders}
+
+    for oid in order_ids:
+        o = by_id.get(oid)
+        if not o:
+            continue
+        if (o.status or "").lower() in kits_repo.EXCLUDED_ORDER_STATUSES:
+            continue
+
+        unit_price = float(o.detail_price_one or 0.0)
+        total_price = float(o.total_price or 0.0)
+
+        item_summary = schemas.OrderSummaryItem(
+            order_id=o.order_id,
+            order_name=o.order_name,
+            order_code=o.order_code,
+            quantity=o.quantity or 0,
+            unit_price=unit_price,
+            total_price=total_price,
+        )
+
+        items.append(item_summary)
+        total_price_with_taxes = item_summary.total_kit_price_with_taxes
+        total_kit_price_with_taxes += total_price_with_taxes
+
+    return schemas.KitSummaryResponse(
+        kit_id=kit.kit_id,
+        kit_name=kit.kit_name,
+        kit_quantity=kit.quantity,
+        orders=items,
+        total_kit_price_with_taxes=total_kit_price_with_taxes
+    )
+
 async def delete_kit(
     db: AsyncSession,
     *,

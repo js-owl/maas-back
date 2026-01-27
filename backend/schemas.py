@@ -1061,3 +1061,44 @@ class KitUpdate(BaseModel):
     status: Optional[str] = None
     bitrix_deal_id: Optional[int] = None
     location: Optional[str] = None
+
+
+class OrderSummaryItem(BaseModel):
+    order_id: int
+    order_name: Optional[str] = None
+    order_code: Optional[str] = None
+
+    quantity: int
+    unit_price: float
+    total_price: float
+
+    # computed
+    taxes: float | None = None
+    total_kit_price_with_taxes: float | None = None
+
+    @model_validator(mode="after")
+    def compute_taxes(self):
+        """
+        taxes = total_price * 0.22
+        total_kit_price_with_taxes = total_price + taxes
+        """
+        if self.total_price is not None:
+            self.taxes = round(float(self.total_price * 0.22), 2)
+            self.total_kit_price_with_taxes = round(float(self.total_price), 2) + self.taxes
+        else:
+            self.taxes = 0.0
+            self.total_kit_price_with_taxes = 0.0
+        return self
+    
+    class Config:
+        from_attributes = True
+
+
+class KitSummaryResponse(BaseModel):
+    kit_id: int
+    kit_name: Optional[str] = None
+    kit_quantity: int
+
+    orders: List[OrderSummaryItem]
+
+    total_kit_price_with_taxes: float | None = None

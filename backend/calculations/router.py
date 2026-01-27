@@ -290,11 +290,13 @@ async def calculate_price(
     logger.info(f"Calculation completed in {total_calculation_time:.3f} seconds (service: {calculation_time:.3f} seconds)")
     
     # Prepare response with appropriate dimension field
+    extracted_dimensions = data.get("extracted_dimensions", {})
     response = {
         "service_id": request_data.service_id,
         "quantity": quantity,
-        "length": request_data.length,
-        "width": request_data.width,
+        "length": round(extracted_dimensions.get("length", 0), 0),
+        "width": round(extracted_dimensions.get("width", 0), 0),
+        "height": round(extracted_dimensions.get("thickness", 0), 0),
         "n_dimensions": n_dimensions,
         "k_otk": k_otk,  # OTK (quality control) coefficient
         "mat_volume": data.get("mat_volume"),
@@ -319,11 +321,11 @@ async def calculate_price(
     }
     
     # Add dimension fields to response
-    if request_data.height is not None:
-        response["height"] = request_data.height
-    if request_data.thickness is not None:
+    # if request_data.height is not None: DEPRECATED
+    #     response["height"] = request_data.height
+    if request_data.thickness is not None: # DEPRECATED
         response["thickness"] = request_data.thickness
-    if request_data.dia is not None:
+    if request_data.dia is not None: # DEPRECATED
         response["dia"] = request_data.dia
     
     # File analysis is now handled by the calculator service (port 7000)
