@@ -84,6 +84,7 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
         city=user.city,
         company=user.company,
         phone_number=user.phone_number,
+        personal_phone_number=user.personal_phone_number,
         payment_card_number=user.payment_card_number
     )
     db.add(db_user)

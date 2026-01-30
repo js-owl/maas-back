@@ -150,29 +150,6 @@ async def ensure_order_new_columns() -> None:
                     await session.commit()
             except Exception as e:
                 await session.rollback()
-
-            # Users table columns
-            result = await session.execute("PRAGMA table_info('users')")
-            user_cols = {row[1] for row in result}
-            user_alters = []
-            if 'bitrix_contact_id' not in user_cols:
-                user_alters.append("ALTER TABLE users ADD COLUMN bitrix_contact_id INTEGER")
-            if 'created_at' not in user_cols:
-                user_alters.append("ALTER TABLE users ADD COLUMN created_at DATETIME")
-            if 'updated_at' not in user_cols:
-                user_alters.append("ALTER TABLE users ADD COLUMN updated_at DATETIME")
-            for stmt in user_alters:
-                await session.execute(stmt)
-            if user_alters:
-                await session.commit()
-                # Backfill timestamp columns for existing users
-                try:
-                    now = datetime.now(timezone.utc)
-                    await session.execute("UPDATE users SET created_at = ? WHERE created_at IS NULL", (now,))
-                    await session.execute("UPDATE users SET updated_at = ? WHERE updated_at IS NULL", (now,))
-                    await session.commit()
-                except Exception:
-                    await session.rollback()
             
             # Orders table: make dimensions column nullable
             try:
@@ -390,3 +367,41 @@ async def ensure_kits_table() -> None:
         except Exception as e:
             await session.rollback()
             logger.error(f"Error ensuring kits table: {e}", exc_info=True)
+
+async def ensure_users_new_columns() -> None:
+    """Ensure users table exists and has required columns (SQLite friendly)."""
+    async with AsyncSessionLocal() as session:
+        try:
+            # ensure columns
+            result = await session.execute(text("PRAGMA table_info('users')"))
+            cols = {row[1] for row in result}
+            alters = []
+
+            required = {
+                "bitrix_contact_id": "INTEGER",
+                "created_at": "DATETIME",
+                "updated_at": "DATETIME",
+                "personal_phone_number": "VARCHAR",
+            }
+
+            for col_name, col_type in required.items():
+                if col_name not in cols:
+                    alters.append(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+
+            for stmt in alters:
+                await session.execute(text(stmt))
+
+            if alters:
+                await session.commit()
+                logger.info(f"Added {len(alters)} columns to users table")
+                # Backfill timestamp columns for existing users
+                try:
+                    now = datetime.now(timezone.utc)
+                    await session.execute("UPDATE users SET created_at = ? WHERE created_at IS NULL", (now,))
+                    await session.execute("UPDATE users SET updated_at = ? WHERE updated_at IS NULL", (now,))
+                    await session.commit()
+                except Exception:
+                    await session.rollback()
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error ensuring users table: {e}", exc_info=True)

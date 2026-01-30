@@ -13,6 +13,7 @@ class UserCreate(BaseModel):
     city: Optional[str] = None
     company: Optional[str] = None
     phone_number: Optional[str] = None
+    personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
     
     @validator('user_type')
@@ -68,6 +69,7 @@ class UserUpdate(BaseModel):
     city: Optional[str] = None
     company: Optional[str] = None
     phone_number: Optional[str] = None
+    personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
     # Additional fields for legal entities
     building: Optional[str] = None
@@ -121,6 +123,7 @@ class UserOut(BaseModel):
     city: Optional[str] = None
     company: Optional[str] = None
     phone_number: Optional[str] = None
+    personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
     # Additional fields for legal entities
     building: Optional[str] = None

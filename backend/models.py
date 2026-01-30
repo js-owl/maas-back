@@ -22,6 +22,7 @@ class User(Base):
     city = Column(String, nullable=True)
     company = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
+    personal_phone_number = Column(String, nullable=True)
     payment_card_number = Column(String, nullable=True)
     # Additional fields for legal entities
     building = Column(String, nullable=True)

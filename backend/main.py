@@ -21,7 +21,7 @@ from backend.core.error_handlers import (
 from fastapi.exceptions import RequestValidationError
 from backend.database import (
     seed_admin, ensure_order_new_columns, ensure_invoices_table, 
-    ensure_kits_table, AsyncSessionLocal
+    ensure_kits_table, ensure_users_new_columns, AsyncSessionLocal
 )
 from sqlalchemy import select, func
 from fastapi import Request
@@ -430,6 +430,7 @@ async def startup_event():
     await ensure_order_new_columns()
     await ensure_invoices_table()
     await ensure_kits_table()
+    await ensure_users_new_columns()
     
     # Automatically migrate invoices from documents table if needed
     await auto_migrate_invoices_if_needed()
