@@ -1,11 +1,11 @@
 """
 Service integration tests
-Tests integration between calculator service and Bitrix API
+Tests integration between calculator service and backend API
 """
 import pytest
 import httpx
 from tests.test_config import BASE_URL, CALCULATOR_URL
-from tests.test_helpers import is_calculator_available, is_bitrix_available
+from tests.test_helpers import is_calculator_available
 
 
 @pytest.mark.integration
@@ -56,49 +56,6 @@ class TestCalculatorServiceIntegration:
         assert response.status_code == 200
         locations = response.json()
         assert isinstance(locations, dict)
-
-
-@pytest.mark.integration
-@pytest.mark.requires_bitrix
-@pytest.mark.asyncio
-class TestBitrixServiceIntegration:
-    """Test Bitrix CRM service integration"""
-    
-    async def test_bitrix_service_connectivity(self, skip_if_bitrix_unavailable):
-        """Test Bitrix service connectivity"""
-        available = await is_bitrix_available()
-        assert available, "Bitrix service should be available"
-    
-    async def test_bitrix_sync_status_endpoint(
-        self, http_client, admin_token, skip_if_bitrix_unavailable
-    ):
-        """Test Bitrix sync status endpoint"""
-        response = await http_client.get(
-            f"{BASE_URL}/sync/status",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert response.status_code == 200
-        status = response.json()
-        assert "success" in status
-        assert "data" in status
-        assert "bitrix_configured" in status["data"]
-        assert "total_items" in status["data"]
-    
-    async def test_bitrix_sync_queue_endpoint(
-        self, http_client, admin_token, skip_if_bitrix_unavailable
-    ):
-        """Test Bitrix sync queue endpoint"""
-        response = await http_client.get(
-            f"{BASE_URL}/sync/queue",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "success" in response_data
-        assert "data" in response_data
-        assert "items" in response_data["data"]
-        queue = response_data["data"]["items"]
-        assert isinstance(queue, list)
 
 
 @pytest.mark.integration

@@ -172,19 +172,21 @@ async def hard_delete_kit(db: AsyncSession, kit_id: int) -> bool:
     - unlink orders: set Order.kit_id = NULL for orders in this kit (source of truth = orders.kit_id)
     - delete kit row
     """
-    kit = await db.get(models.Kit, kit_id)
-    if not kit:
-        return False
+    return soft_delete_kit(db, kit_id)
 
-    # Unlink orders from kit
-    res = await db.execute(select(models.Order).where(models.Order.kit_id == kit_id))
-    orders = res.scalars().all()
-    for o in orders:
-        o.kit_id = None
-        db.add(o)
+    # kit = await db.get(models.Kit, kit_id)
+    # if not kit:
+    #     return False
 
-    await db.commit()
+    # # Unlink orders from kit
+    # res = await db.execute(select(models.Order).where(models.Order.kit_id == kit_id))
+    # orders = res.scalars().all()
+    # for o in orders:
+    #     o.kit_id = None
+    #     db.add(o)
 
-    await db.delete(kit)
-    await db.commit()
-    return True
+    # await db.commit()
+
+    # await db.delete(kit)
+    # await db.commit()
+    # return True

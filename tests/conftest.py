@@ -15,20 +15,17 @@ load_dotenv()
 from tests.test_config import (
     BASE_URL,
     CALCULATOR_URL,
-    BITRIX_WEBHOOK_URL,
     DEFAULT_TIMEOUT,
     TEST_ADMIN_USERNAME,
     TEST_ADMIN_PASSWORD,
 )
 from tests.test_helpers import (
     is_calculator_available,
-    is_bitrix_available,
     is_backend_available,
     generate_test_user,
     login_user,
     register_and_login,
     mock_calculator_response,
-    mock_bitrix_deal_response,
     cleanup_uploads_directory,
 )
 
@@ -60,9 +57,6 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "requires_calculator: Tests requiring calculator service"
     )
-    config.addinivalue_line(
-        "markers", "requires_bitrix: Tests requiring Bitrix API"
-    )
 
 
 # ============================================================================
@@ -93,24 +87,11 @@ async def calculator_available() -> bool:
     return await is_calculator_available()
 
 
-@pytest.fixture(scope="session")
-async def bitrix_available() -> bool:
-    """Check if Bitrix API is available"""
-    return await is_bitrix_available()
-
-
 @pytest.fixture
 def skip_if_calculator_unavailable(calculator_available):
     """Skip test if calculator service is not available"""
     if not calculator_available:
         pytest.skip("Calculator service not available")
-
-
-@pytest.fixture
-def skip_if_bitrix_unavailable(bitrix_available):
-    """Skip test if Bitrix API is not available"""
-    if not bitrix_available:
-        pytest.skip("Bitrix API not available")
 
 
 # ============================================================================
@@ -184,17 +165,6 @@ def mock_calculator_service():
     with patch('backend.calculations.service.call_calculator_service') as mock_calc:
         mock_calc.return_value = mock_calculator_response()
         yield mock_calc
-
-
-@pytest.fixture
-def mock_bitrix_api():
-    """Mock Bitrix API responses"""
-    with patch('httpx.AsyncClient.post') as mock_post:
-        mock_response = AsyncMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = mock_bitrix_deal_response()
-        mock_post.return_value = mock_response
-        yield mock_post
 
 
 @pytest.fixture

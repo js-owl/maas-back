@@ -26,7 +26,7 @@ async def create_kit_from_orders(
     quantity: int,
     status: str = "pending",
     bitrix_deal_id: Optional[int] = None,
-    location: Optional[str] = None,
+    location: Optional[str] = None, # DEPRECATED
     order_ids: List[int],
 ) -> models.Kit:
     order_ids = [int(x) for x in order_ids]
@@ -46,6 +46,12 @@ async def create_kit_from_orders(
         if foreign:
             raise ValueError(f"Orders do not belong to current user: {foreign}")
 
+    res_loc = await db.execute(
+        select(models.User.location)
+        .where(models.User.id == current_user.id)
+    )
+    user_location = res_loc.scalar_one_or_none()
+
     kit = await kits_repo.create_kit(
         db,
         user_id=current_user.id if not current_user.is_admin else orders[0].user_id,
@@ -53,11 +59,11 @@ async def create_kit_from_orders(
         quantity=quantity,
         status=status,
         bitrix_deal_id=bitrix_deal_id,
-        location=location,
+        location=user_location,
         order_ids=order_ids,
     )
     await db.commit()
-
+    
     # recalc prices
     kit = await kits_repo.recalc_kit_prices(db, kit.kit_id)
 

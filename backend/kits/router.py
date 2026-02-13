@@ -1,14 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from backend.core.dependencies import get_request_db as get_db
+from backend.core.redis import get_redis
+from backend.core.config import BITRIX_ENABLED
 from backend.auth.dependencies import get_current_user, get_current_admin_user
 from backend import models, schemas
 from backend.kits.service import (
     create_kit_from_orders, get_kit, list_my_kits, update_kit,
     list_all_kits, delete_kit, hard_delete_kit, get_kit_calculation_summary
 )
+from backend.bitrix24.async_queue import enqueue_operation
+from backend.bitrix24.repositories.mapping_repository import get_bitrix_id
+from backend.bitrix24.sync_payload.deal import kit_to_deal_create, kit_to_deal_update
+from backend.utils.logging import get_logger
 
+logger = get_logger(__name__)
 router = APIRouter()
 
 @router.post("/kits", response_model=schemas.KitOut, tags=["Kits"])
@@ -16,6 +24,7 @@ async def create_kit_endpoint(
     payload: schemas.KitCreate,
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     try:
         kit = await create_kit_from_orders(
@@ -28,6 +37,22 @@ async def create_kit_endpoint(
             location=payload.location,
             order_ids=payload.order_ids,
         )
+        if BITRIX_ENABLED:
+            try:
+                deal_dto = await kit_to_deal_create(db, kit)
+                deal_payload = deal_dto.model_dump(exclude_none=True)
+                await enqueue_operation(
+                    entity_type="deal",
+                    action="create",
+                    payload=deal_payload,
+                    local_id=kit.kit_id,
+                    redis=redis,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue Bitrix24 deal sync for kit %s",
+                    kit.kit_id,
+                )
         return kit
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -71,6 +96,7 @@ async def update_kit_endpoint(
     payload: schemas.KitUpdate,
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     try:
         kit = await update_kit(
@@ -84,6 +110,25 @@ async def update_kit_endpoint(
             location=payload.location,
             order_ids=payload.order_ids,
         )
+        if BITRIX_ENABLED:
+            bitrix_deal_id = await get_bitrix_id(db, kit_id, "deal")
+            if bitrix_deal_id is not None:
+                try:
+                    deal_dto = await kit_to_deal_update(db, kit)
+                    deal_payload = deal_dto.model_dump(exclude_none=True)
+                    await enqueue_operation(
+                        entity_type="deal",
+                        action="update",
+                        payload=deal_payload,
+                        local_id=kit_id,
+                        external_id=bitrix_deal_id,
+                        redis=redis,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to enqueue Bitrix24 deal update for kit %s",
+                        kit_id,
+                    )
         return kit
     except ValueError as e:
         msg = str(e)
@@ -119,7 +164,7 @@ async def hard_delete_kit_endpoint(
 ):
     try:
         ok = await hard_delete_kit(db, kit_id=kit_id, current_user=current_user)
-        return {"success": ok}
+        return {"success": ok, "message": "Replaced with soft deletion due to the inadmissibility of this action"}
     except ValueError as e:
         msg = str(e)
         code = 404 if "not found" in msg.lower() else 403 if "access" in msg.lower() else 400

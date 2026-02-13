@@ -148,7 +148,7 @@ async def refresh_order_invoice(
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Manually check Bitrix for new invoice and download it"""
+    """Refresh invoice for order (deprecated - external CRM integration removed)"""
     try:
         # Get order to check permissions
         order = await get_order_by_id(db, order_id)
@@ -159,25 +159,10 @@ async def refresh_order_invoice(
         if order.user_id != current_user.id and not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Access denied")
         
-        # Use deal sync service to check and download invoice
-        from backend.bitrix.deal_sync_service import BitrixDealSyncService
-        sync_service = BitrixDealSyncService()
-        
-        if not order.bitrix_deal_id:
-            raise HTTPException(status_code=400, detail="Order has no Bitrix deal ID")
-        
-        success = await sync_service.check_and_download_invoice(db, order_id, order.bitrix_deal_id)
-        
-        if success:
-            return {
-                "success": True,
-                "message": "Invoice refreshed successfully"
-            }
-        else:
-            return {
-                "success": False,
-                "message": "No new invoice found or failed to download"
-            }
+        raise HTTPException(
+            status_code=410,
+            detail="Invoice refresh from external CRM is no longer available"
+        )
         
     except HTTPException:
         raise

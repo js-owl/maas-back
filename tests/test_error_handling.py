@@ -208,60 +208,6 @@ class TestCalculatorServiceErrors:
         assert response.status_code in [200, 400, 422]
 
 
-@pytest.mark.integration
-@pytest.mark.requires_bitrix
-class TestBitrixServiceErrors:
-    """Test handling of Bitrix service errors"""
-    
-    @pytest.mark.asyncio
-    async def test_bitrix_webhook_with_invalid_payload(
-        self, http_client, skip_if_bitrix_unavailable
-    ):
-        """Test Bitrix webhook with invalid payload"""
-        invalid_payloads = [
-            {},  # Empty
-            {"invalid": "data"},  # Missing required fields
-            {"event": "UNKNOWN_EVENT"},  # Unknown event type
-        ]
-        
-        for payload in invalid_payloads:
-            response = await http_client.post(
-                f"{BASE_URL}/bitrix/webhook",
-                json=payload
-            )
-            # Should either accept gracefully or reject
-            assert response.status_code in [200, 400, 422]
-    
-    @pytest.mark.asyncio
-    async def test_bitrix_sync_with_no_pending_items(
-        self, http_client, admin_token, skip_if_bitrix_unavailable
-    ):
-        """Test Bitrix sync when queue is empty"""
-        response = await http_client.post(
-            f"{BASE_URL}/sync/process",
-            json={"limit": 10},
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        # Should succeed with 0 processed
-        assert response.status_code == 200
-        result = response.json()
-        assert "stats" in result
-        assert "processed" in result["stats"]
-    
-    @pytest.mark.asyncio
-    async def test_bitrix_sync_status_when_disabled(self, http_client, admin_token):
-        """Test Bitrix sync status when Bitrix is disabled"""
-        response = await http_client.get(
-            f"{BASE_URL}/sync/status",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        # Should return status even if disabled
-        assert response.status_code == 200
-        status = response.json()
-        assert "data" in status
-        assert "bitrix_configured" in status["data"]
-
-
 @pytest.mark.unit
 class TestDatabaseErrors:
     """Test handling of database-related errors"""

@@ -16,9 +16,6 @@ logging.getLogger('sqlalchemy.orm').setLevel(logging.WARNING)
 # Reduce httpx logging verbosity (400 errors are expected for deleted deals)
 logging.getLogger('httpx').setLevel(logging.WARNING)
 
-# Reduce Bitrix warnings to reduce log noise (optional)
-logging.getLogger('backend.bitrix').setLevel(logging.ERROR)
-
 
 def get_logger(name: str) -> logging.Logger:
     """Get a logger instance for a module"""

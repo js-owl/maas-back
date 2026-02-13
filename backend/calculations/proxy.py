@@ -121,11 +121,28 @@ async def get_services(request: Request = None) -> List[str]:
     return response
 
 
-async def get_other_services(request: Request = None) -> List[str]:
+async def get_all_services(request: Request = None) -> List[Dict[str, Any]]:
+    """Get all available manufacturing services from calculator service"""
+    response = await proxy_get_request("all_services", request=request)
+    if isinstance(response, dict) and "all_services" in response:
+        print(response["all_services"])
+        return {"services": response["all_services"]}
+    return response
+
+
+async def get_auto_services(request: Request = None) -> List[Dict[str, Any]]:
+    """Get auto (manufacturing) services from calculator service (per attribute_data_mapping: auto_services)."""
+    response = await proxy_get_request("auto_services", request=request)
+    if isinstance(response, dict) and "auto_services" in response:
+        return response["auto_services"]
+    return response
+
+
+async def get_other_services(request: Request = None) -> List[Dict[str, Any]]:
     """Get available other manufacturing services (without auto price calculation) from calculator service"""
     response = await proxy_get_request("other_services", request=request)
-    if isinstance(response, dict) and "services" in response:
-        return response["services"]
+    if isinstance(response, dict) and "other_services" in response:
+        return response["other_services"]
     return response
 
 

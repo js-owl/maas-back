@@ -15,13 +15,11 @@ import uuid
 from tests.test_config import (
     BASE_URL,
     CALCULATOR_URL,
-    BITRIX_WEBHOOK_URL,
     DEFAULT_TIMEOUT,
     QUICK_TIMEOUT,
     MAX_RETRIES,
     RETRY_DELAY_SECONDS,
     MOCK_CALCULATOR_RESPONSE,
-    MOCK_BITRIX_DEAL_RESPONSE,
 )
 
 
@@ -35,25 +33,6 @@ async def is_calculator_available() -> bool:
         async with httpx.AsyncClient(timeout=QUICK_TIMEOUT) as client:
             response = await client.get(f"{CALCULATOR_URL}/health")
             return response.status_code == 200
-    except Exception:
-        return False
-
-
-async def is_bitrix_available() -> bool:
-    """Check if Bitrix API is available"""
-    if not BITRIX_WEBHOOK_URL:
-        return False
-    try:
-        # Use the same SSL verification setting as the Bitrix client
-        import os
-        verify_tls = os.getenv("BITRIX_VERIFY_TLS", "true").lower() != "false"
-        async with httpx.AsyncClient(timeout=QUICK_TIMEOUT, verify=verify_tls) as client:
-            # Try a simple test call
-            response = await client.post(
-                f"{BITRIX_WEBHOOK_URL}/crm.deal.list",
-                json={"select": ["ID"], "filter": {}, "start": 0}
-            )
-            return response.status_code in [200, 401, 403]  # Service is up even if unauthorized
     except Exception:
         return False
 
@@ -207,42 +186,6 @@ def mock_calculator_response(
     response["total_price"] = total_price
     response.update(kwargs)
     return response
-
-
-def mock_bitrix_deal_response(
-    deal_id: str = "12345",
-    title: str = "Test Deal",
-    **kwargs
-) -> Dict[str, Any]:
-    """Build mock Bitrix deal response"""
-    response = MOCK_BITRIX_DEAL_RESPONSE.copy()
-    response["result"]["id"] = deal_id
-    response["result"]["title"] = title
-    if kwargs:
-        response["result"].update(kwargs)
-    return response
-
-
-def mock_bitrix_webhook(
-    event: str = "ONCRMDEALUPDATE",
-    entity_id: str = "12345",
-    **kwargs
-) -> Dict[str, Any]:
-    """Build mock Bitrix webhook payload"""
-    return {
-        "event": event,
-        "data": {
-            "FIELDS": {
-                "ID": entity_id,
-                **kwargs
-            }
-        },
-        "ts": str(int(time.time())),
-        "auth": {
-            "domain": "test.bitrix24.com",
-            "application_token": "test_token"
-        }
-    }
 
 
 # ============================================================================

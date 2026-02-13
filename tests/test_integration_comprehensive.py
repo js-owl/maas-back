@@ -309,15 +309,6 @@ endsolid test"""
                 print(f"❌ Get all call requests failed: {response.status_code}")
                 return False
             
-            # Test Bitrix sync status
-            response = await self.client.get(
-                f"{self.base_url}/sync/status",
-                headers=headers
-            )
-            if response.status_code != 200:
-                print(f"❌ Get Bitrix sync status failed: {response.status_code}")
-                return False
-            
             print("✅ All admin endpoints working")
             return True
             

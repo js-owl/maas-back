@@ -7,7 +7,29 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPBearer
 from sqlalchemy.exc import SQLAlchemyError
-from backend.core.config import APP_TITLE, APP_VERSION
+from backend.core.config import (
+    APP_TITLE,
+    APP_VERSION,
+    BITRIX24_ACCESS_TOKEN,
+    BITRIX24_TIMEOUT,
+    BITRIX24_WEBHOOK_URL,
+    BITRIX_ENABLED,
+    BITRIX_VERIFY_TLS,
+    BITRIX_PRODUCT_IBLOCK_ID,
+    CALCULATOR_BASE_URL,
+    CORS_ALLOW_CREDENTIALS,
+    CORS_ALLOW_HEADERS,
+    CORS_ALLOW_METHODS,
+    CORS_ORIGINS,
+)
+from backend.core.redis import init_redis, close_redis
+from backend.bitrix24.async_queue.process import (
+    start_executor_process,
+    stop_executor_process,
+)
+from backend.bitrix24.client import BitrixClient
+from backend.bitrix24.startup_sync import run_constant_entity_startup_sync
+from backend.bitrix24.seed_constant_entities import seed_constant_entity_initial_data
 from backend.core.middleware import https_redirect_middleware
 from backend.core.dependencies import get_db
 from backend.core.exceptions import BaseAPIException
@@ -21,13 +43,15 @@ from backend.core.error_handlers import (
 from fastapi.exceptions import RequestValidationError
 from backend.database import (
     seed_admin, ensure_order_new_columns, ensure_invoices_table, 
-    ensure_kits_table, ensure_users_new_columns, AsyncSessionLocal
+    ensure_kits_table, ensure_users_new_columns,
+    ensure_users_location_column, backfill_users_location_from_kits,
+    _env_json_dict, apply_admin_location_overrides, 
+    ensure_maas_bitrix_ids_mapping_table, ensure_constant_entity_tables,
+    AsyncSessionLocal
 )
 from sqlalchemy import select, func
 from fastapi import Request
 from backend.utils.logging import get_logger
-import os
-import json
 import time
 
 logger = get_logger(__name__)
@@ -85,33 +109,17 @@ app.middleware("http")(request_logging_middleware)
 # Add HTTPS redirect middleware
 app.middleware("http")(https_redirect_middleware)
 
-# CORS configuration from environment variables
-cors_origins = os.getenv("CORS_ORIGINS", '["*"]')
-cors_allow_credentials = os.getenv("CORS_ALLOW_CREDENTIALS", "true").lower() == "true"
-cors_allow_methods = os.getenv("CORS_ALLOW_METHODS", '["*"]')
-cors_allow_headers = os.getenv("CORS_ALLOW_HEADERS", '["*"]')
-
-# Parse JSON strings from environment variables
-try:
-    cors_origins = json.loads(cors_origins)
-    cors_allow_methods = json.loads(cors_allow_methods)
-    cors_allow_headers = json.loads(cors_allow_headers)
-except json.JSONDecodeError:
-    # Fallback to default values if JSON parsing fails
-    cors_origins = ["*"]
-    cors_allow_methods = ["*"]
-    cors_allow_headers = ["*"]
-
+# CORS configuration from config
 # Log CORS configuration for debugging
-logger.info(f"CORS Configuration - Origins: {cors_origins}, Credentials: {cors_allow_credentials}, Methods: {cors_allow_methods}, Headers: {cors_allow_headers}")
+logger.info(f"CORS Configuration - Origins: {CORS_ORIGINS}, Credentials: {CORS_ALLOW_CREDENTIALS}, Methods: {CORS_ALLOW_METHODS}, Headers: {CORS_ALLOW_HEADERS}")
 
 # Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=cors_origins,
-    allow_credentials=cors_allow_credentials,
-    allow_methods=cors_allow_methods,
-    allow_headers=cors_allow_headers,
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=CORS_ALLOW_CREDENTIALS,
+    allow_methods=CORS_ALLOW_METHODS,
+    allow_headers=CORS_ALLOW_HEADERS,
     expose_headers=["*"],  # Expose all headers to frontend
     max_age=3600,  # Cache preflight response for 1 hour
 )
@@ -147,9 +155,8 @@ from backend.documents.router import router as documents_router
 from backend.invoices.router import router as invoices_router
 from backend.calculations.router import router as calculations_router
 from backend.orders.router import router as orders_router
-from backend.bitrix.router import router as bitrix_router
-from backend.bitrix.webhook_router import router as bitrix_webhook_router
 from backend.call_requests.router import router as call_requests_router
+from backend.kits.router import router as kits_router
 from backend.kits.router import router as kits_router
 
 # Register routers
@@ -160,8 +167,6 @@ app.include_router(documents_router)
 app.include_router(invoices_router)
 app.include_router(calculations_router)
 app.include_router(orders_router)
-app.include_router(bitrix_router)
-app.include_router(bitrix_webhook_router)
 app.include_router(call_requests_router)
 app.include_router(kits_router)
 
@@ -201,7 +206,7 @@ async def detailed_health_check():
             "calculations": "active"
         },
         "calculator_service": {
-            "base_url": os.getenv("CALCULATOR_BASE_URL", "http://localhost:7000"),
+            "base_url": CALCULATOR_BASE_URL,
             "status": "configured"
         }
     }
@@ -431,149 +436,56 @@ async def startup_event():
     await ensure_invoices_table()
     await ensure_kits_table()
     await ensure_users_new_columns()
-    
+    # --- location migration to users ---
+    await ensure_users_location_column()
+    await backfill_users_location_from_kits()
+    overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
+    await apply_admin_location_overrides(overrides)
+    # bitrix_table
+    await ensure_maas_bitrix_ids_mapping_table()
+    await ensure_constant_entity_tables()
+
+    # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
+    try:
+        async with AsyncSessionLocal() as db:
+            await seed_constant_entity_initial_data(db, BITRIX_PRODUCT_IBLOCK_ID)
+    except Exception as e:
+        logger.warning("Constant-entity initial data seed failed (non-fatal): %s", e)
+
+    # Constant-entity startup sync (reconcile local rows with Bitrix24, store external IDs in mapping)
+    if BITRIX_ENABLED and BITRIX24_WEBHOOK_URL:
+        try:
+            client = BitrixClient(
+                base_url=BITRIX24_WEBHOOK_URL,
+                access_token=BITRIX24_ACCESS_TOKEN,
+                timeout=BITRIX24_TIMEOUT,
+                verify_tls=BITRIX_VERIFY_TLS,
+            )
+            async with AsyncSessionLocal() as db:
+                await run_constant_entity_startup_sync(db, client)
+        except Exception as e:
+            logger.warning("Constant-entity startup sync failed (non-fatal): %s", e)
+
     # Automatically migrate invoices from documents table if needed
     await auto_migrate_invoices_if_needed()
     
     # Seed admin user
     await seed_admin()
-    
-    # Initialize Bitrix components if configured
-    from backend.bitrix.client import bitrix_client
-    if bitrix_client.is_configured():
-        # Initialize MaaS funnel
-        from backend.bitrix.funnel_manager import funnel_manager
-        try:
-            success = await funnel_manager.ensure_maas_funnel()
-            if success:
-                logger.info(f"MaaS funnel initialized with category ID: {funnel_manager.get_category_id()}")
-            else:
-                logger.warning("Failed to initialize MaaS funnel")
-        except Exception as e:
-            logger.error(f"Error initializing MaaS funnel: {e}", exc_info=True)
-        
-        # Ensure all required user fields exist
-        from backend.bitrix.field_manager import field_manager
-        try:
-            success = await field_manager.ensure_all_fields()
-            if success:
-                logger.info("All required Bitrix user fields ensured")
-            else:
-                logger.warning("Some Bitrix user fields may not have been created")
-        except Exception as e:
-            logger.error(f"Error ensuring Bitrix user fields: {e}", exc_info=True)
-        
-        # Sync all existing orders and contacts to Bitrix if configured
-        if bitrix_client.is_configured():
-            from backend.core.config import BITRIX_WORKER_ENABLED
-            if BITRIX_WORKER_ENABLED:
-                from backend.bitrix.sync_service import bitrix_sync_service
-                from backend.bitrix.cleanup_service import bitrix_cleanup_service
-                from backend.database import AsyncSessionLocal
-                import asyncio
 
-                async def sync_existing_data():
-                    """Sync all existing orders and contacts to Bitrix via Redis queue, and clean up duplicates"""
-                    try:
-                        # Wait a bit for worker to be ready
-                        await asyncio.sleep(2)
+    # Initialize Redis connection pool
+    await init_redis(app)
 
-                        async with AsyncSessionLocal() as db:
-                            logger.info("Starting sync of existing orders and contacts to Bitrix...")
-
-                            # Sync orders
-                            orders_result = await bitrix_sync_service.sync_all_orders_to_bitrix(db)
-                            logger.info(f"Orders sync result: {orders_result}")
-
-                            # Sync contacts
-                            contacts_result = await bitrix_sync_service.sync_all_contacts_to_bitrix(db)
-                            logger.info(f"Contacts sync result: {contacts_result}")
-
-                            # Clean up duplicate deals
-                            logger.info("Cleaning up duplicate deals...")
-                            cleanup_result = await bitrix_cleanup_service.cleanup_all_duplicate_deals(db)
-                            logger.info(f"Duplicate cleanup result: {cleanup_result}")
-
-                            logger.info("Startup sync completed")
-                    except Exception as e:
-                        logger.error(f"Error during startup sync: {e}", exc_info=True)
-
-                # Start sync in background task
-                sync_task = asyncio.create_task(sync_existing_data())
-                logger.info("Startup sync task created")
-                app.state.bitrix_sync_task = sync_task
-    
-    # Start Bitrix worker if enabled
-    from backend.core.config import BITRIX_WORKER_ENABLED
-    if BITRIX_WORKER_ENABLED:
-        from backend.bitrix.worker import bitrix_worker
-        import asyncio
-        
-        async def start_worker():
-            """Start Bitrix worker in background"""
-            try:
-                logger.info("Starting Bitrix worker background task...")
-                logger.info(f"About to call bitrix_worker.process_messages(), worker object: {bitrix_worker}")
-                logger.info(f"Worker running state before call: {bitrix_worker.running}")
-                # Add a small delay to ensure startup completes
-                await asyncio.sleep(2)
-                logger.info("Starting worker process_messages loop...")
-                logger.info("About to await bitrix_worker.process_messages()...")
-                await bitrix_worker.process_messages()
-                logger.warning("bitrix_worker.process_messages() completed - this should not happen unless worker was stopped")
-                logger.info(f"Worker running state after completion: {bitrix_worker.running}")
-            except asyncio.CancelledError:
-                logger.info("Bitrix worker task was cancelled")
-                bitrix_worker.running = False
-            except Exception as e:
-                logger.error(f"Bitrix worker error: {e}", exc_info=True)
-                import traceback
-                logger.error(f"Traceback: {traceback.format_exc()}")
-                # Restart worker after error (with delay)
-                logger.info("Restarting worker after error in 5 seconds...")
-                await asyncio.sleep(5)
-                # Recursively restart
-                task = asyncio.create_task(start_worker())
-                app.state.bitrix_worker_task = task
-        
-        # Start worker as background task (don't await it)
-        task = asyncio.create_task(start_worker())
-        logger.info(f"Bitrix worker task created: {task}")
-        logger.info("Bitrix worker started in background")
-        # Store task reference to prevent garbage collection
-        app.state.bitrix_worker_task = task
-    else:
-        logger.info("Bitrix worker is disabled (BITRIX_WORKER_ENABLED=false)")
-    
-    # Start Bitrix deal sync scheduler
-    from backend.bitrix.deal_sync_scheduler import deal_sync_scheduler
-    
-    async def start_sync_scheduler():
-        """Start Bitrix deal sync scheduler in background"""
-        try:
-            await deal_sync_scheduler.start_sync_task()
-        except asyncio.CancelledError:
-            logger.info("Bitrix deal sync scheduler task was cancelled")
-            deal_sync_scheduler.running = False
-        except Exception as e:
-            logger.error(f"Bitrix deal sync scheduler error: {e}", exc_info=True)
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            # Restart scheduler after error (with delay)
-            logger.info("Restarting deal sync scheduler after error in 10 seconds...")
-            await asyncio.sleep(10)
-            # Recursively restart
-            task = asyncio.create_task(start_sync_scheduler())
-            app.state.bitrix_sync_scheduler_task = task
-    
-    # Start scheduler as background task (don't await it)
-    sync_scheduler_task = asyncio.create_task(start_sync_scheduler())
-    logger.info(f"Bitrix deal sync scheduler task created: {sync_scheduler_task}")
-    logger.info("Bitrix deal sync scheduler started in background")
-    # Store task reference to prevent garbage collection
-    app.state.bitrix_sync_scheduler_task = sync_scheduler_task
+    # Start Bitrix24 executor process
+    start_executor_process(app)
     
     logger.info("Application startup complete")
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Gracefully shutdown application resources."""
+    stop_executor_process(app)
+    await close_redis(app)
 
 
 if __name__ == "__main__":

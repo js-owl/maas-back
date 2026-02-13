@@ -1,6 +1,6 @@
 """
 Integration workflow tests with real services
-E2E tests using real calculator service and Bitrix API
+E2E tests using real calculator service
 """
 import pytest
 import httpx
@@ -150,78 +150,6 @@ class TestCompleteUserJourneyIntegration:
                 calculation = response.json()
                 assert "total_price" in calculation
                 assert calculation["service_id"] == service_id
-
-
-@pytest.mark.integration
-@pytest.mark.requires_bitrix
-@pytest.mark.asyncio
-class TestBitrixIntegration:
-    """Test Bitrix CRM integration workflows"""
-    
-    async def test_order_sync_to_bitrix(
-        self, http_client, admin_token, user_account, uploaded_file,
-        skip_if_bitrix_unavailable
-    ):
-        """
-        Test order synchronization to Bitrix CRM
-        """
-        user_data, user_token = user_account
-        
-        # Create order
-        order_data = generate_test_order_data("cnc-milling", uploaded_file)
-        response = await http_client.post(
-            f"{BASE_URL}/orders",
-            json=order_data,
-            headers={"Authorization": f"Bearer {user_token}"}
-        )
-        assert response.status_code == 200
-        order_id = response.json()["order_id"]
-        
-        # Check Bitrix sync status
-        response = await http_client.get(
-            f"{BASE_URL}/sync/status",
-            headers={"Authorization": f"Bearer {admin_token}"}
-        )
-        assert response.status_code == 200
-        status = response.json()
-        assert "data" in status
-        assert "bitrix_configured" in status["data"]
-        
-        if status["data"].get("bitrix_configured"):
-            # Process sync queue
-            response = await http_client.post(
-                f"{BASE_URL}/sync/process",
-                json={"limit": 10},
-                headers={"Authorization": f"Bearer {admin_token}"}
-            )
-            assert response.status_code == 200
-            result = response.json()
-            assert "stats" in result
-            assert "processed" in result["stats"]
-    
-    async def test_bitrix_webhook_handling(
-        self, http_client, skip_if_bitrix_unavailable
-    ):
-        """
-        Test Bitrix webhook event handling
-        """
-        webhook_payload = {
-            "event": "ONCRMDEALUPDATE",
-            "data": {
-                "FIELDS": {
-                    "ID": "12345",
-                    "TITLE": "Test Deal",
-                    "STAGE_ID": "WON"
-                }
-            }
-        }
-        
-        response = await http_client.post(
-            f"{BASE_URL}/bitrix/webhook",
-            json=webhook_payload
-        )
-        # Should accept webhook
-        assert response.status_code in [200, 400]
 
 
 @pytest.mark.integration

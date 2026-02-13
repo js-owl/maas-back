@@ -11,7 +11,6 @@ from tests.test_helpers import (
     generate_test_file_upload,
     generate_test_order_data,
     mock_calculator_response,
-    mock_bitrix_deal_response,
 )
 
 

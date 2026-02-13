@@ -19,11 +19,7 @@ from backend.orders.repository import (
 from backend.files.service import get_file_data_as_base64, get_file_by_id
 from backend.calculations.service import call_calculator_service
 from backend.documents.service import get_documents_by_ids
-from backend.bitrix.client import bitrix_client
-from backend.bitrix.service import create_deal_from_order
-from backend.bitrix.sync_service import bitrix_sync_service
 from backend.utils.logging import get_logger
-import asyncio
 
 logger = get_logger(__name__)
 
@@ -105,20 +101,15 @@ async def create_order_with_calculation(
         calc_result["ml_confidence"] = calc_result.get("ml_confidence")
         calc_result["calculation_time"] = calculation_time
         calc_result["total_calculation_time"] = total_calculation_time
+
+        # update extracted dimensions
+        extracted_dimensions = calc_result.get("extracted_dimensions", {})
+        order_data.length = round(extracted_dimensions.get("length", 0), 0)
+        order_data.width = round(extracted_dimensions.get("width", 0), 0)
+        order_data.height = round(extracted_dimensions.get("thickness", 0), 0)
         
         # Create order with calculation results
         db_order = await repo_create_order(db, user_id, order_data, file_id, calc_result)
-        
-        # Queue Bitrix integration (non-blocking)
-        try:
-            await bitrix_sync_service.queue_deal_creation(
-                db, db_order.order_id, user_id, file_id, order_data.document_ids
-            )
-            # Also queue contact creation if not already synced
-            await bitrix_sync_service.queue_contact_creation(db, user_id)
-        except Exception as e:
-            logger.warning(f"Failed to queue Bitrix sync for order {db_order.order_id}: {e}")
-            # Don't fail order creation if Bitrix sync fails
         
         logger.info(f"Order created successfully: {db_order.order_id}")
         return db_order
@@ -196,17 +187,6 @@ async def create_order_with_dimensions(
         # Create order with calculation results (no file_id)
         db_order = await repo_create_order(db, user_id, order_data, None, calc_result)
         
-        # Queue Bitrix integration (non-blocking) - no file_id
-        try:
-            await bitrix_sync_service.queue_deal_creation(
-                db, db_order.order_id, user_id, None, order_data.document_ids
-            )
-            # Also queue contact creation if not already synced
-            await bitrix_sync_service.queue_contact_creation(db, user_id)
-        except Exception as e:
-            logger.warning(f"Failed to queue Bitrix sync for order {db_order.order_id}: {e}")
-            # Don't fail order creation if Bitrix sync fails
-        
         logger.info(f"Order created successfully with dimensions: {db_order.order_id}")
         return db_order
         
@@ -262,22 +242,6 @@ async def update_order(db: AsyncSession, order_id: int, order_update: schemas.Or
             updated_order = await repo_get_order_by_id(db, order_id)
         except Exception as refresh_error:
             logger.error(f"Failed to refresh order {order_id} after recalculation error: {refresh_error}")
-    
-    # Queue Bitrix deal sync (create if missing, update if exists)
-    if updated_order:
-        try:
-            from backend.bitrix.sync_service import bitrix_sync_service
-            if updated_order.bitrix_deal_id:
-                # Deal exists, update it
-                await bitrix_sync_service.queue_deal_update(db, order_id)
-            else:
-                # Deal doesn't exist, create it
-                await bitrix_sync_service.queue_deal_creation(
-                    db, order_id, updated_order.user_id, updated_order.file_id, None
-                )
-        except Exception as e:
-            logger.warning(f"Failed to queue Bitrix deal sync for order {order_id}: {e}")
-            # Don't fail order update if Bitrix sync fails
     
     return updated_order
 
@@ -374,74 +338,3 @@ async def recalculate_order_price(db: AsyncSession, order: models.Order) -> bool
         logger.error(f"Error recalculating order {order.order_id}: {e}", exc_info=True)
         return False
 
-
-async def create_bitrix_deal_async(order_id: int, user_id: int, file_id: int, document_ids: List[int] = None):
-    """Create Bitrix deal asynchronously"""
-    try:
-        from backend.core.dependencies import get_db
-        
-        # Get order and related data
-        async for session in get_db():
-            order = await repo_get_order_by_id(session, order_id)
-            if not order:
-                logger.warning(f"Order {order_id} not found for Bitrix integration")
-                return
-            
-            # Get file information
-            file_record = await get_file_by_id(session, file_id)
-            if not file_record:
-                logger.warning(f"File {file_id} not found for Bitrix integration")
-                return
-            
-            # Get documents if provided
-            documents = []
-            if document_ids:
-                documents = await get_documents_by_ids(session, document_ids)
-            
-            # Create Bitrix deal
-            deal_id = await create_deal_from_order(order, file_record, documents)
-            if deal_id:
-                logger.info(f"Bitrix deal created: {deal_id} for order {order_id}")
-            else:
-                logger.warning(f"Failed to create Bitrix deal for order {order_id}")
-            
-            break
-            
-    except Exception as e:
-        logger.error(f"Error creating Bitrix deal for order {order_id}: {e}")
-
-
-async def sync_orders_with_bitrix(db: AsyncSession) -> Dict[str, Any]:
-    """Sync all orders with Bitrix (admin function)"""
-    try:
-        orders = await repo_get_all_orders(db)
-        synced_count = 0
-        failed_count = 0
-        
-        for order in orders:
-            try:
-                # Get file and documents
-                file_record = await get_file_by_id(db, order.file_id) if order.file_id else None
-                documents = []
-                
-                # Create deal
-                deal_id = await create_deal_from_order(order, file_record, documents)
-                if deal_id:
-                    synced_count += 1
-                else:
-                    failed_count += 1
-                    
-            except Exception as e:
-                logger.error(f"Error syncing order {order.order_id} with Bitrix: {e}")
-                failed_count += 1
-        
-        return {
-            "total_orders": len(orders),
-            "synced_count": synced_count,
-            "failed_count": failed_count,
-            "message": f"Synced {synced_count} orders with Bitrix"
-        }
-        
-    except Exception as e:
-        logger.error(f"Error in Bitrix sync: {e}")
-        raise

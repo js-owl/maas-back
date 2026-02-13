@@ -2,15 +2,20 @@
 Users router
 Handles user profile and admin user management endpoints
 """
-import os
-import json
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from redis.asyncio import Redis
+from backend.core.config import CORS_ALLOW_HEADERS, CORS_ALLOW_METHODS, CORS_ORIGINS
+from backend.core.redis import get_redis
+from backend.core.config import BITRIX_ENABLED
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
 from backend.auth.dependencies import get_current_user, get_current_admin_user
 from backend.users.service import update_user, get_users, delete_user, get_user_by_id
+from backend.bitrix24.async_queue import enqueue_operation
+from backend.bitrix24.repositories.mapping_repository import get_bitrix_id
+from backend.bitrix24.sync_payload.contact import user_to_contact_update
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -22,35 +27,20 @@ router = APIRouter()
 @router.options('/profile/', tags=["Users"])
 async def profile_options(request: Request):
     """Handle CORS preflight requests for profile endpoints"""
-    # Get CORS configuration from environment to match middleware settings
-    cors_origins = os.getenv("CORS_ORIGINS", '["*"]')
-    cors_allow_methods = os.getenv("CORS_ALLOW_METHODS", '["*"]')
-    cors_allow_headers = os.getenv("CORS_ALLOW_HEADERS", '["*"]')
-    
-    try:
-        cors_origins = json.loads(cors_origins)
-        cors_allow_methods = json.loads(cors_allow_methods)
-        cors_allow_headers = json.loads(cors_allow_headers)
-    except json.JSONDecodeError:
-        cors_origins = ["*"]
-        cors_allow_methods = ["*"]
-        cors_allow_headers = ["*"]
-    
     # Get origin from request if available
     origin = request.headers.get("origin")
     allowed_origin = "*"
-    if origin and cors_origins != ["*"]:
-        # Check if origin is in allowed list
-        if origin in cors_origins:
+    if origin and CORS_ORIGINS != ["*"]:
+        if origin in CORS_ORIGINS:
             allowed_origin = origin
-    elif cors_origins == ["*"]:
+    elif CORS_ORIGINS == ["*"]:
         allowed_origin = "*"
     
     # Build response with CORS headers
     headers = {
         "Access-Control-Allow-Origin": allowed_origin,
-        "Access-Control-Allow-Methods": ", ".join(cors_allow_methods) if isinstance(cors_allow_methods, list) else cors_allow_methods,
-        "Access-Control-Allow-Headers": ", ".join(cors_allow_headers) if isinstance(cors_allow_headers, list) else cors_allow_headers,
+        "Access-Control-Allow-Methods": ", ".join(CORS_ALLOW_METHODS) if isinstance(CORS_ALLOW_METHODS, list) else CORS_ALLOW_METHODS,
+        "Access-Control-Allow-Headers": ", ".join(CORS_ALLOW_HEADERS) if isinstance(CORS_ALLOW_HEADERS, list) else CORS_ALLOW_HEADERS,
         "Access-Control-Allow-Credentials": "true",
         "Access-Control-Max-Age": "3600"
     }
@@ -84,9 +74,10 @@ async def get_profile(current_user: models.User = Depends(get_current_user), req
 @router.put('/profile', response_model=schemas.UserOut, tags=["Users"])
 @router.put('/profile/', response_model=schemas.UserOut, tags=["Users"])
 async def update_profile(
-    user_update: schemas.UserUpdate, 
+    user_update: schemas.UserUpdate,
     current_user: models.User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
     request: Request = None
 ):
     """Update current user's profile with conditional logic for user types"""
@@ -115,13 +106,24 @@ async def update_profile(
             logger.error(f"User {current_user.id} not found after update attempt")
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Queue Bitrix contact update if user has a Bitrix contact
-        if updated_user.bitrix_contact_id:
-            try:
-                from backend.bitrix.sync_service import bitrix_sync_service
-                await bitrix_sync_service.queue_contact_update(db, updated_user.id)
-            except Exception as e:
-                logger.warning(f"Failed to queue Bitrix contact update for user {updated_user.id}: {e}")
+        if BITRIX_ENABLED:
+            bitrix_contact_id = await get_bitrix_id(db, updated_user.id, "contact")
+            if bitrix_contact_id is not None:
+                try:
+                    contact_dto = user_to_contact_update(updated_user)
+                    payload = contact_dto.model_dump(exclude_none=True)
+                    await enqueue_operation(
+                        entity_type="contact",
+                        action="update",
+                        payload=payload,
+                        external_id=bitrix_contact_id,
+                        redis=redis,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to enqueue Bitrix24 contact update for user %s",
+                        updated_user.id,
+                    )
         
         logger.info(f"Profile updated successfully for user {current_user.id} (type: {updated_user.user_type})")
         return updated_user
@@ -166,6 +168,7 @@ async def update_user_by_id_endpoint(
     user_id: int,
     user_update: schemas.UserUpdate,
     db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
     current_user: models.User = Depends(get_current_admin_user)
 ):
     """Update user by ID (admin only)"""
@@ -174,17 +177,24 @@ async def update_user_by_id_endpoint(
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
         
-        # Queue Bitrix contact sync (create if missing, update if exists)
-        try:
-            from backend.bitrix.sync_service import bitrix_sync_service
-            if updated_user.bitrix_contact_id:
-                # Contact exists, update it
-                await bitrix_sync_service.queue_contact_update(db, updated_user.id)
-            else:
-                # Contact doesn't exist, create it
-                await bitrix_sync_service.queue_contact_creation(db, updated_user.id)
-        except Exception as e:
-            logger.warning(f"Failed to queue Bitrix contact sync for user {updated_user.id}: {e}")
+        if BITRIX_ENABLED:
+            bitrix_contact_id = await get_bitrix_id(db, updated_user.id, "contact")
+            if bitrix_contact_id is not None:
+                try:
+                    contact_dto = user_to_contact_update(updated_user)
+                    payload = contact_dto.model_dump(exclude_none=True)
+                    await enqueue_operation(
+                        entity_type="contact",
+                        action="update",
+                        payload=payload,
+                        external_id=bitrix_contact_id,
+                        redis=redis,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to enqueue Bitrix24 contact update for user %s",
+                        updated_user.id,
+                    )
         
         return updated_user
     except HTTPException:

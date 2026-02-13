@@ -1,40 +1,40 @@
 services:
   # Backend service - use local Dockerfile
   # Runs on port 8001 to avoid conflicts with other services
-  backend:
-    image: shop-backend-local
-    build:
-      context: .
-      dockerfile: Dockerfile.local
-    container_name: backend
-    ports:
-      - "8001:8000"
-    env_file:
-      - .env
-    environment:
-      CORS_ORIGINS: '["*"]'
-      CORS_ALLOW_CREDENTIALS: "true"
-      CORS_ALLOW_METHODS: '["*"]'
-      CORS_ALLOW_HEADERS: '["*"]'
-      CALCULATOR_BASE_URL: "http://backend-calc:7000"
-      REDIS_HOST: "redis"
-      REDIS_PORT: "6379"
-      REDIS_DB: "0"
-      REDIS_STREAM_PREFIX: "bitrix:"
-      BITRIX_WORKER_ENABLED: "true"
-      BITRIX_ENABLED: "true"
-      BITRIX24_WEBHOOK_URL: "https://192.168.137.128/rest/1/xvk26ytwyro21odf/"
-      BITRIX_VERIFY_TLS: "false"
-      BITRIX_WEBHOOK_TOKEN: "${BITRIX_WEBHOOK_TOKEN}"
-    volumes:
-      - ./data:/app/data
-      - ./uploads:/app/uploads
-      - ./backend:/app/backend
-    restart: unless-stopped
-    depends_on:
-      - redis
-    networks:
-      - maas-shared
+  # backend:
+  #   image: shop-backend-local
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.local
+  #   container_name: backend
+  #   ports:
+  #     - "8001:8000"
+  #   env_file:
+  #     - .env
+  #   environment:
+  #     CORS_ORIGINS: '["*"]'
+  #     CORS_ALLOW_CREDENTIALS: "true"
+  #     CORS_ALLOW_METHODS: '["*"]'
+  #     CORS_ALLOW_HEADERS: '["*"]'
+  #     CALCULATOR_BASE_URL: "http://backend-calc:7000"
+  #     REDIS_HOST: "redis"
+  #     REDIS_PORT: "6379"
+  #     REDIS_DB: "0"
+  #     REDIS_STREAM_PREFIX: "bitrix:"
+  #     BITRIX_WORKER_ENABLED: "true"
+  #     BITRIX_ENABLED: "true"
+  #     BITRIX24_WEBHOOK_URL: "https://192.168.137.128/rest/1/xvk26ytwyro21odf/"
+  #     BITRIX_VERIFY_TLS: "false"
+  #     BITRIX_WEBHOOK_TOKEN: "${BITRIX_WEBHOOK_TOKEN}"
+  #   volumes:
+  #     - ./data:/app/data
+  #     - ./uploads:/app/uploads
+  #     - ./backend:/app/backend
+  #   restart: unless-stopped
+  #   depends_on:
+  #     - redis
+  #   networks:
+  #     - maas-shared
 
   # Redis service for message queue
   redis:
@@ -46,9 +46,9 @@ services:
       - ./redis-data:/data
     command: redis-server --appendonly yes --appendfsync everysec
     restart: unless-stopped
-    networks:
-      - maas-shared
+    # networks:
+    #   - maas-shared
 
-networks:
-  maas-shared:
-    external: true
+# networks:
+#   maas-shared:
+#     external: true

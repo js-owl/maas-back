@@ -93,6 +93,27 @@ async def get_document_download_path(document_record: models.DocumentStorage) ->
     return None
 
 
+async def get_document_data_as_base64(
+    document_record: models.DocumentStorage,
+) -> Optional[tuple[str, str]]:
+    """Get document as (filename, base64_encoded_content). Returns None if file cannot be read."""
+    import base64
+
+    try:
+        path = await get_document_download_path(document_record)
+        if not path or not path.exists():
+            return None
+        with open(path, "rb") as f:
+            data = base64.b64encode(f.read()).decode("utf-8")
+        filename = getattr(document_record, "original_filename", None) or getattr(
+            document_record, "filename", path.name
+        )
+        return (filename, data)
+    except Exception as e:
+        logger.error(f"Error reading document as base64: {e}")
+        return None
+
+
 def get_supported_formats() -> List[str]:
     """Get list of supported document formats"""
     return document_storage.get_supported_formats()

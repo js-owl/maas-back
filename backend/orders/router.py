@@ -3,10 +3,13 @@ Orders router
 Handles order creation, management, and admin endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, Response, Request
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional, Dict, Any
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
+from backend.core.redis import get_redis
+from backend.core.config import BITRIX_ENABLED
 from backend.auth.dependencies import get_current_user, get_current_admin_user
 from backend.orders.service import (
     create_order_with_calculation,
@@ -17,10 +20,12 @@ from backend.orders.service import (
     update_order,
     delete_order,
     hard_delete_order,
-    recalculate_order_price,
-    sync_orders_with_bitrix
+    recalculate_order_price
 )
 from backend.kits.service import add_order_to_kit
+from backend.bitrix24.async_queue import enqueue_operation
+from backend.bitrix24.repositories.mapping_repository import get_bitrix_id
+from backend.bitrix24.sync_payload.product import order_to_product_create, order_to_product_update
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -57,7 +62,8 @@ async def order_documents_options():
 async def create_order(
     request_data: schemas.OrderCreateRequest,
     current_user: models.User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     """Create a new order with JSON request body"""
     try:
@@ -108,6 +114,23 @@ async def create_order(
             from backend.documents.service import get_documents_by_ids
             documents = await get_documents_by_ids(db, request_data.document_ids)
             # Note: Document attachment logic would go here if needed
+        
+        if BITRIX_ENABLED:
+            try:
+                product_dto = await order_to_product_create(db, db_order)
+                payload = product_dto.model_dump(exclude_none=True)
+                await enqueue_operation(
+                    entity_type="product",
+                    action="create",
+                    payload=payload,
+                    local_id=db_order.order_id,
+                    redis=redis,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue Bitrix24 product sync for order %s",
+                    db_order.order_id,
+                )
         
         logger.info(f"Order created: {db_order.order_id} for user {current_user.id}")
         return db_order
@@ -219,7 +242,8 @@ async def update_order_endpoint(
     order_id: int,
     order_update: schemas.OrderUpdate,
     current_user: models.User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ):
     """Update order"""
     try:
@@ -236,6 +260,26 @@ async def update_order_endpoint(
         updated_order = await update_order(db, order_id, order_update)
         if not updated_order:
             raise HTTPException(status_code=500, detail="Order update failed")
+        
+        if BITRIX_ENABLED:
+            bitrix_product_id = await get_bitrix_id(db, order_id, "product")
+            if bitrix_product_id is not None:
+                try:
+                    product_dto = await order_to_product_update(db, updated_order)
+                    payload = product_dto.model_dump(exclude_none=True)
+                    await enqueue_operation(
+                        entity_type="product",
+                        action="update",
+                        payload=payload,
+                        local_id=order_id,
+                        external_id=bitrix_product_id,
+                        redis=redis,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to enqueue Bitrix24 product update for order %s",
+                        order_id,
+                    )
         
         logger.info(f"Order {order_id} updated successfully")
         return updated_order
@@ -330,14 +374,6 @@ async def update_admin_order(
         await db.commit()
         await db.refresh(order)
         
-        # Queue Bitrix deal update if order has a Bitrix deal
-        if order.bitrix_deal_id:
-            try:
-                from backend.bitrix.sync_service import bitrix_sync_service
-                await bitrix_sync_service.queue_deal_update(db, order_id)
-            except Exception as e:
-                logger.warning(f"Failed to queue Bitrix deal update for order {order_id}: {e}")
-        
         logger.info(f"Admin {current_user.id} updated order {order_id} status to {order_update.status}")
         return schemas.MessageResponse(message="Order updated successfully")
     except HTTPException:
@@ -406,7 +442,7 @@ async def recalculate_orders_sync(
     current_user: models.User = Depends(get_current_admin_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Recalculate all orders and sync with Bitrix (admin only)"""
+    """Recalculate all orders (admin only)"""
     try:
         # Get all orders
         orders = await get_all_orders(db)
@@ -424,15 +460,11 @@ async def recalculate_orders_sync(
                 logger.error(f"Error recalculating order {order.order_id}: {e}")
                 failed_count += 1
         
-        # Sync with Bitrix
-        bitrix_result = await sync_orders_with_bitrix(db)
-        
         return {
             "total_orders": len(orders),
             "recalculated_count": recalculated_count,
             "failed_count": failed_count,
-            "bitrix_sync": bitrix_result,
-            "message": f"Recalculated {recalculated_count} orders and synced with Bitrix"
+            "message": f"Recalculated {recalculated_count} orders"
         }
         
     except Exception as e:

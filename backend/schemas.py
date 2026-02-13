@@ -3,6 +3,37 @@ from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
 
+
+# MaaS-Bitrix IDs Mapping schemas
+class MaasBitrixIdsMappingBase(BaseModel):
+    maas_id: int
+    bitrix_id: int
+    entity_type: str
+    buffer: Optional[Dict[str, Any]] = None
+
+
+class MaasBitrixIdsMappingCreate(MaasBitrixIdsMappingBase):
+    """Schema for creating a new mapping"""
+    pass
+
+
+class MaasBitrixIdsMappingUpdate(BaseModel):
+    """Schema for updating an existing mapping"""
+    maas_id: Optional[int] = None
+    bitrix_id: Optional[int] = None
+    entity_type: Optional[str] = None
+    buffer: Optional[Dict[str, Any]] = None
+
+
+class MaasBitrixIdsMappingOut(MaasBitrixIdsMappingBase):
+    """Schema for mapping output with all fields"""
+    id: int
+    created_at: datetime
+    updated_at: datetime
+    
+    class Config:
+        from_attributes = True
+
 # User schemas
 class UserCreate(BaseModel):
     username: str

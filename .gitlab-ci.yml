@@ -408,6 +408,7 @@ deploy:development:
         echo "Image: ${NEXUS_PUSH_IMAGE}:dev-${IMAGE_TAG}" >> deployment.log
         echo "Git tag: ${IMAGE_TAG}" >> deployment.log
         echo "Git commit: ${CI_COMMIT_SHA}" >> deployment.log
+        echo ADMIN_LOCATION_OVERRIDES_JSON
       EOF
   only:
     - /^dev-v[0-9]+\.[0-9]+\.[0-9]+$/

@@ -66,6 +66,7 @@ services:
   redis:
     image: ${NEXUS_BUILD_REGISTRY:-vortex.kronshtadt.ru:8443}/maas-proxy/redis:8.2.3
     container_name: redis-dev
+    user: 1001:1001
     volumes:
       - ./redis-data:/data
     command: redis-server --appendonly yes --appendfsync everysec

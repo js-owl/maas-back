@@ -3,13 +3,17 @@ Authentication router
 Handles login, logout, and registration endpoints
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Response
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
+from backend.core.redis import get_redis
+from backend.core.config import BITRIX_ENABLED
+from backend.bitrix24.async_queue import enqueue_operation
+from backend.bitrix24.sync_payload.contact import user_to_contact_create
 from backend.auth.service import authenticate_user, create_access_token, get_password_hash
 from backend.auth.dependencies import get_current_user
-from backend.bitrix.client import bitrix_client
 from backend.users.repository import get_user_by_id
 from backend.database import get_db as get_db_session
 from backend.utils.logging import get_logger
@@ -64,7 +68,11 @@ async def register_options():
 
 
 @router.post('/register', response_model=schemas.UserOut, tags=["Authentication"])
-async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get_db)):
+async def register_user(
+    user: schemas.UserCreate,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
     """Register a new user"""
     logger.info(f"Registering user: {user.username}")
     result = await db.execute(select(models.User).where(models.User.username == user.username))
@@ -91,11 +99,22 @@ async def register_user(user: schemas.UserCreate, db: AsyncSession = Depends(get
     await db.commit()
     await db.refresh(db_user)
     logger.info(f"User created: {db_user.id} - {db_user.username}")
-    # Bitrix: queue contact creation via Redis
-    try:
-        from backend.bitrix.sync_service import bitrix_sync_service
-        await bitrix_sync_service.queue_contact_creation(db, db_user.id)
-    except Exception as e:
-        logger.warning(f"Failed to queue Bitrix contact creation for user {db_user.id}: {e}")
-        # Don't fail user registration if Bitrix sync fails
+
+    if BITRIX_ENABLED:
+        contact = user_to_contact_create(db_user)
+        payload = contact.model_dump(exclude_none=True)
+
+        try:
+            await enqueue_operation(
+                entity_type="contact",
+                action="create",
+                payload=payload,
+                local_id=db_user.id,
+                redis=redis,
+            )
+        except Exception:
+            logger.exception(
+                "Failed to enqueue Bitrix24 contact sync for user %s",
+                db_user.id,
+            )
     return db_user

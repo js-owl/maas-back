@@ -17,7 +17,6 @@ from test_documents_endpoints import TestDocumentsEndpoints
 from test_calculations_endpoints import CalculationsEndpointTester as TestCalculationsEndpoints
 from test_orders_endpoints import OrdersEndpointTester as TestOrdersEndpoints
 from test_call_requests_endpoints import TestCallRequestsEndpoints
-from test_bitrix_endpoints import TestBitrixEndpoints
 from test_integration_comprehensive import ComprehensiveIntegrationTester as TestIntegrationComprehensive
 
 class MasterTestRunner:
@@ -46,7 +45,6 @@ class MasterTestRunner:
             ("Calculations", TestCalculationsEndpoints),
             ("Orders", TestOrdersEndpoints),
             ("Call Requests", TestCallRequestsEndpoints),
-            ("Bitrix", TestBitrixEndpoints),
             ("Integration", TestIntegrationComprehensive)
         ]
         
@@ -109,7 +107,6 @@ class MasterTestRunner:
             "calculations": TestCalculationsEndpoints,
             "orders": TestOrdersEndpoints,
             "call-requests": TestCallRequestsEndpoints,
-            "bitrix": TestBitrixEndpoints,
             "integration": TestIntegrationComprehensive
         }
         
@@ -130,7 +127,7 @@ async def main():
     parser = argparse.ArgumentParser(description="Run API tests")
     parser.add_argument("--suite", help="Run specific test suite", 
                        choices=["auth", "users", "files", "documents", "calculations", 
-                               "orders", "call-requests", "bitrix", "integration"])
+                               "orders", "call-requests", "integration"])
     parser.add_argument("--url", default="http://localhost:8000", 
                        help="Base URL for API (default: http://localhost:8000)")
     

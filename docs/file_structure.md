@@ -2,13 +2,13 @@
 
 ## Project Overview
 
-**Manufacturing Service API v3.1.0** - A modular FastAPI application providing manufacturing calculation services with ML-based pricing, file management, order processing, and Bitrix CRM integration.
+**Manufacturing Service API v3.1.0** - A modular FastAPI application providing manufacturing calculation services with ML-based pricing, file management, and order processing.
 
 **Technology Stack:**
 - **Backend:** FastAPI, SQLAlchemy, Pydantic
 - **Database:** SQLite (development), PostgreSQL (production)
 - **Authentication:** JWT tokens with bcrypt password hashing
-- **External Services:** Calculator service (port 7000), Bitrix CRM API
+- **External Services:** Calculator service (port 7000)
 - **File Processing:** Trimesh, ezdxf, Pillow for 3D model analysis and preview generation
 
 ## Root Level Files
@@ -88,18 +88,8 @@
 **Purpose:** Order management and processing
 
 - **`router.py`** - Order endpoints (create, read, update, delete, recalculate)
-- **`service.py`** - Order business logic (creation with calculation, Bitrix sync)
+- **`service.py`** - Order business logic (creation with calculation)
 - **`repository.py`** - Order data access layer
-- **`invoice_service.py`** - Invoice generation and management
-
-### Bitrix Module (`backend/bitrix/`)
-**Purpose:** Bitrix CRM integration and synchronization
-
-- **`router.py`** - Bitrix endpoints (sync contact, sync deal, webhook status)
-- **`service.py`** - Bitrix API integration logic
-- **`sync_service.py`** - Asynchronous synchronization service
-- **`webhook_router.py`** - Webhook handlers for Bitrix events
-- **`client.py`** - Bitrix API client with rate limiting
 
 ### Call Requests Module (`backend/call_requests/`)
 **Purpose:** Customer call request management

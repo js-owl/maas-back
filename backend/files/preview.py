@@ -1,303 +1,171 @@
 """
 Files preview module
 3D model preview generation service
+
+This service is responsible for:
+- Receiving a 3D model file path (already saved locally)
+- Calling CALCULATOR_BASE_URL to generate preview PNGs
+- Persisting the final preview PNG(s) to PREVIEW_DIR
+
+CadQuery is NOT required here anymore; it lives in the calculator service.
 """
+
 import os
 import uuid
-import asyncio
 import logging
 from pathlib import Path
 from typing import Optional, Dict, Any
-from PIL import Image
-import io
+
+import base64
+import httpx
+from PIL import Image, ImageDraw, ImageFont
+
+from backend.core.config import CALCULATOR_BASE_URL, PREVIEW_DIR
 
 logger = logging.getLogger(__name__)
 
+
 class PreviewGenerator:
-    """3D model preview generation service using trimesh"""
-    
+    """3D model preview generation client (delegates rendering to calculator service)."""
+
     def __init__(self, preview_dir: str = None):
         if preview_dir is None:
-            preview_dir = os.getenv("PREVIEW_DIR", "uploads/previews")
-        
+            preview_dir = PREVIEW_DIR
+
         self.preview_dir = Path(preview_dir)
         self.preview_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Preview generation settings
+
+        # Preview settings
         self.preview_size = (512, 512)
-        self.background_color = (240, 240, 240)
-        self.supported_formats = {'.stl', '.obj', '.ply', '.3ds', '.dae', '.fbx', '.blend', '.stp', '.step'}
-    
+        self.supported_formats = {".stl", ".stp", ".step"}
+
     def _generate_preview_filename(self, original_filename: str) -> str:
         """Generate unique preview filename"""
         file_stem = Path(original_filename).stem
         unique_id = str(uuid.uuid4())[:8]
         return f"{file_stem}_{unique_id}_preview.png"
-    
+
     async def generate_preview(self, model_path: Path, original_filename: str) -> Optional[Dict[str, Any]]:
-        """Generate preview image from 3D model file"""
+        """
+        Generate preview image 
+        for given model_path and persist it into PREVIEW_DIR.
+        """
         try:
-            # Check if file format is supported
-            file_extension = Path(model_path).suffix.lower()
-            if file_extension not in self.supported_formats:
-                logger.warning(f"Unsupported file format for preview: {file_extension}")
-                return None
-            
-            # Generate preview filename and path
-            preview_filename = self._generate_preview_filename(original_filename)
-            preview_path = self.preview_dir / preview_filename
-            
-            # Try different preview generation methods
-            success = False
-            
-            # Method 1: Try trimesh (lightweight, good for STL/OBJ)
-            if file_extension in {'.stl', '.obj', '.ply'}:
-                try:
-                    success = await self._generate_with_trimesh(model_path, preview_path)
-                    if success:
-                        logger.info(f"Preview generated with trimesh: {preview_filename}")
-                except Exception as e:
-                    logger.warning(f"Trimesh preview generation failed: {e}")
-            
-            # Method 2: Try STEP reader (for STP/STEP files)
-            if not success and file_extension in {'.stp', '.step'}:
-                try:
-                    success = await self._generate_with_step_reader(model_path, preview_path)
-                    if success:
-                        logger.info(f"Preview generated with STEP reader: {preview_filename}")
-                except Exception as e:
-                    logger.warning(f"STEP reader preview generation failed: {e}")
-            
-            # Method 3: Try pyvista (more powerful, supports more formats)
-            if not success:
-                try:
-                    success = await self._generate_with_pyvista(model_path, preview_path)
-                    if success:
-                        logger.info(f"Preview generated with pyvista: {preview_filename}")
-                except Exception as e:
-                    logger.warning(f"Pyvista preview generation failed: {e}")
-            
-            # Method 3: Fallback to placeholder
-            if not success:
-                logger.warning(f"All preview generation methods failed for {original_filename}, using placeholder")
-                success = await self._generate_placeholder_preview(preview_path, original_filename)
-            
-            if success and preview_path.exists():
-                return {
-                    "preview_filename": preview_filename,
-                    "preview_path": str(preview_path),
-                    "preview_generated": True,
-                    "preview_generation_error": None
-                }
-            else:
+            ext = Path(model_path).suffix.lower()
+            if ext not in self.supported_formats:
+                logger.warning(f"Unsupported file format for preview: {ext}")
                 return {
                     "preview_filename": None,
                     "preview_path": None,
                     "preview_generated": False,
-                    "preview_generation_error": "All preview generation methods failed"
+                    "preview_generation_error": f"Unsupported file format: {ext}",
                 }
-                
+
+            preview_filename = self._generate_preview_filename(original_filename)
+            preview_path = self.preview_dir / preview_filename
+
+            ok = await self._generate_via_calculator(model_path, original_filename, preview_path)
+            if not ok:
+                logger.warning(f"Remote preview generation failed for {original_filename}, using placeholder")
+                await self._generate_placeholder_preview(preview_path, original_filename)
+
+            return {
+                "preview_filename": preview_filename if preview_path.exists() else None,
+                "preview_path": str(preview_path) if preview_path.exists() else None,
+                "preview_generated": preview_path.exists(),
+                "preview_generation_error": None if preview_path.exists() else "Preview generation failed",
+            }
+
         except Exception as e:
-            logger.error(f"Error generating preview for {original_filename}: {e}")
+            logger.exception(f"Error generating preview for {original_filename}")
             return {
                 "preview_filename": None,
                 "preview_path": None,
                 "preview_generated": False,
-                "preview_generation_error": str(e)
+                "preview_generation_error": str(e),
             }
-    
-    async def _generate_with_trimesh(self, model_path: Path, preview_path: Path) -> bool:
-        """Generate preview using trimesh"""
-        try:
-            import trimesh
-            import numpy as np
-            
-            # Load mesh
-            mesh = trimesh.load(str(model_path))
-            
-            # Create scene
-            scene = trimesh.Scene([mesh])
-            
-            # Set up camera
-            scene.set_camera(angles=(0, 0, 0), distance=2.0)
-            
-            # Render scene to image
-            png = scene.save_image(resolution=self.preview_size)
-            
-            if png is not None:
-                # Save image
-                with open(preview_path, 'wb') as f:
-                    f.write(png)
-                return True
-            
-        except ImportError:
-            logger.warning("trimesh not available for preview generation")
-        except Exception as e:
-            logger.warning(f"Trimesh preview generation error: {e}")
-        
-        return False
-    
-    async def _generate_with_pyvista(self, model_path: Path, preview_path: Path) -> bool:
-        """Generate preview using pyvista"""
-        try:
-            import pyvista as pv
-            import numpy as np
-            import os
-            
-            # Set environment variable to use OSMesa for headless rendering if available
-            # This prevents X server connection errors in Docker containers
-            os.environ['PYVISTA_OFF_SCREEN'] = 'true'
-            
-            # Try to use OSMesa backend if available
-            try:
-                pv.start_xvfb()  # Try to start virtual framebuffer
-            except:
-                pass  # If xvfb not available, continue anyway
-            
-            # Load mesh
-            mesh = pv.read(str(model_path))
-            
-            # Create plotter with offscreen rendering
-            plotter = pv.Plotter(off_screen=True, window_size=self.preview_size)
-            plotter.add_mesh(mesh, show_edges=True, edge_color='black', line_width=0.5)
-            
-            # Set up camera
-            plotter.camera_position = 'iso'
-            plotter.camera.zoom(1.2)
-            
-            # Render and save
-            plotter.screenshot(str(preview_path))
-            plotter.close()
-            
-            return preview_path.exists()
-            
-        except ImportError:
-            logger.warning("pyvista not available for preview generation")
-        except Exception as e:
-            logger.warning(f"Pyvista preview generation error: {e}")
-        
-        return False
-    
-    async def _generate_with_step_reader(self, model_path: Path, preview_path: Path) -> bool:
-        """Generate preview using CadQuery for STEP files (Approach B: STEP → STL → Trimesh)"""
-        try:
-            import cadquery as cq
-            from cadquery import importers, exporters
-            import trimesh
-            import numpy as np
-            import tempfile
-            import os
-            
-            # Load STEP file with CadQuery
-            model = importers.importStep(str(model_path))
-            
-            # Convert to STL via temporary file
-            with tempfile.NamedTemporaryFile(suffix='.stl', delete=False) as temp_stl:
-                temp_stl_path = temp_stl.name
-            
-            try:
-                # Export to STL
-                exporters.export(model, temp_stl_path, exportType=exporters.ExportTypes.STL)
-                
-                # Check if STL was created successfully
-                if not os.path.exists(temp_stl_path) or os.path.getsize(temp_stl_path) == 0:
-                    logger.warning(f"CadQuery STL export resulted in empty file for: {model_path}")
-                    return False
-                
-                # Use trimesh to generate preview from STL (works headless, no display needed)
-                mesh = trimesh.load(temp_stl_path)
-                
-                # Check if mesh has geometry
-                if mesh.vertices.size == 0:
-                    logger.warning(f"Exported STL has no geometry for: {model_path}")
-                    return False
-                
-                # Create scene
-                scene = trimesh.Scene([mesh])
-                
-                # Set up camera
-                scene.set_camera(angles=(0, 0, 0), distance=2.0)
-                
-                # Render scene to image
-                png = scene.save_image(resolution=self.preview_size)
-                
-                if png is not None:
-                    # Save image
-                    with open(preview_path, 'wb') as f:
-                        f.write(png)
-                    return True
-                
-            finally:
-                # Clean up temporary STL file
-                if os.path.exists(temp_stl_path):
-                    os.unlink(temp_stl_path)
-            
-        except ImportError:
-            logger.warning("CadQuery or trimesh not available for STEP preview generation")
-        except Exception as e:
-            logger.warning(f"CadQuery preview generation error: {e}")
-        
-        return False
-    
-    async def _generate_step_placeholder(self, preview_path: Path) -> bool:
-        """Generate a placeholder image for STEP files when conversion fails"""
-        try:
-            from PIL import Image, ImageDraw, ImageFont
-            import os
-            
-            # Create a simple placeholder image
-            img = Image.new('RGB', self.preview_size, color='lightgray')
-            draw = ImageDraw.Draw(img)
-            
-            # Try to use a default font, fallback to basic if not available
-            try:
-                font = ImageFont.truetype("arial.ttf", 20)
-            except (OSError, IOError):
-                font = ImageFont.load_default()
-            
-            # Add text
-            text = "STEP File\n(Preview not available)"
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            x = (self.preview_size[0] - text_width) // 2
-            y = (self.preview_size[1] - text_height) // 2
-            
-            draw.text((x, y), text, fill='black', font=font)
-            
-            # Save the placeholder
-            img.save(str(preview_path), 'PNG')
-            return True
-            
-        except Exception as e:
-            logger.warning(f"Failed to generate STEP placeholder: {e}")
+
+    async def _generate_via_calculator(self, model_path: Path, original_filename: str, preview_path: Path) -> bool:
+        """Call calculator service /generate-previews and save the first returned PNG."""
+        url = f"{CALCULATOR_BASE_URL}/generate-previews"
+
+        if not CALCULATOR_BASE_URL:
+            logger.warning("Calculator service URL not configured, skipping calculator call")
             return False
-    
+
+        params = {
+            "size": self.preview_size[0],
+            "views": 1,
+        }
+
+        # timeout = httpx.Timeout(connect=50.0, read=120.0, write=120.0, pool=50.0)
+
+        async with httpx.AsyncClient(timeout=50) as client:
+            with open(model_path, "rb") as f:
+                files = {"file": (original_filename, f, "application/octet-stream")}
+                resp = await client.post(url, params=params, files=files)
+        logger.info("post is made")
+
+        if resp.status_code >= 400:
+            logger.warning(f"Calculator preview endpoint error {resp.status_code}: {resp.text[:500]}")
+            return False
+
+        try:
+            payload = resp.json()
+        except Exception:
+            logger.warning("Calculator preview endpoint returned non-JSON response")
+            return False
+
+        # ResponseWrapper may wrap payload into {success,data,...}; handle both.
+        data = payload.get("data") if isinstance(payload, dict) else None
+        if not data and isinstance(payload, dict):
+            data = payload  # fallback
+
+        images = (data or {}).get("images_png_base64") or []
+        if not images:
+            logger.warning(f"No images in calculator response: keys={list((data or {}).keys())}")
+            return False
+
+        try:
+            png_bytes = base64.b64decode(images[0])
+            with open(preview_path, "wb") as out:
+                out.write(png_bytes)
+            logger.info("png is saved")
+            return preview_path.exists() and preview_path.stat().st_size > 0
+        except Exception as e:
+            logger.warning(f"Failed to decode/save PNG from calculator: {e}")
+            return False
+
     async def _generate_placeholder_preview(self, preview_path: Path, original_filename: str) -> bool:
-        """Generate a placeholder preview image"""
+        """Generate a simple local placeholder PNG."""
         try:
-            from backend.utils.helpers import generate_placeholder_preview
-            
-            # Generate placeholder image
-            placeholder_data = generate_placeholder_preview(original_filename)
-            
-            # Save placeholder
-            with open(preview_path, 'wb') as f:
-                f.write(placeholder_data)
-            
+            img = Image.new("RGB", self.preview_size, color=(240, 240, 240))
+            draw = ImageDraw.Draw(img)
+
+            try:
+                font = ImageFont.truetype("arial.ttf", 18)
+            except Exception:
+                font = ImageFont.load_default()
+
+            text = f"{Path(original_filename).suffix.upper()}\npreview unavailable"
+            bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=6, align="center")
+            tw = bbox[2] - bbox[0]
+            th = bbox[3] - bbox[1]
+            x = (self.preview_size[0] - tw) // 2
+            y = (self.preview_size[1] - th) // 2
+            draw.multiline_text((x, y), text, fill=(0, 0, 0), font=font, spacing=6, align="center")
+
+            img.save(str(preview_path), "PNG")
             return True
-            
         except Exception as e:
-            logger.error(f"Error generating placeholder preview: {e}")
+            logger.warning(f"Error generating placeholder preview: {e}")
             return False
-    
+
     def get_preview_path(self, preview_filename: str) -> Optional[Path]:
-        """Get full path to preview image"""
         if not preview_filename:
             return None
-        preview_path = self.preview_dir / preview_filename
-        return preview_path if preview_path.exists() else None
+        p = self.preview_dir / preview_filename
+        return p if p.exists() else None
 
 
 # Global instance

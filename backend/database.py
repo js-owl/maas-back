@@ -1,22 +1,34 @@
+import os
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
-from backend.models import Base, User, FileStorage
+from backend.models import (
+    Base,
+    User,
+    FileStorage,
+    MaasBitrixIdsMapping,
+    BitrixCategory,
+    BitrixStatus,
+    BitrixUserfield,
+    BitrixUserfieldEnum,
+    BitrixProductProperty,
+    BitrixProductPropertyEnum,
+)
 from backend.auth.service import get_password_hash
+from backend.core.config import ADMIN_DEFAULT_PASSWORD, ADMIN_USERNAME, DATABASE_URL, UPLOAD_DIR
 from backend.utils.logging import get_logger
+from backend.core.config import ADMIN_LOCATION_OVERRIDES_JSON
 import asyncio
-import os
 from pathlib import Path
 import shutil
 from datetime import datetime, timezone
 import json
+from typing import Dict, Optional
 
 logger = get_logger(__name__)
 
-SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/shop.db")
-
 engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL, echo=False, future=True
+    DATABASE_URL, echo=False, future=True
 )
 
 AsyncSessionLocal = sessionmaker(
@@ -26,8 +38,8 @@ AsyncSessionLocal = sessionmaker(
 async def seed_admin():
     async with AsyncSessionLocal() as session:
         try:
-            admin_username = os.getenv("ADMIN_USERNAME", "admin")
-            admin_password = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin")
+            admin_username = ADMIN_USERNAME
+            admin_password = ADMIN_DEFAULT_PASSWORD
             
             result = await session.execute(
                 User.__table__.select().where(User.username == admin_username)
@@ -115,6 +127,14 @@ async def ensure_order_new_columns() -> None:
                 order_alters.append("ALTER TABLE orders ADD COLUMN total_price_breakdown TEXT")
             if 'invoice_ids' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN invoice_ids TEXT")
+            if 'location' not in order_cols:
+                order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
+            if 'order_name' not in order_cols:
+                order_alters.append(text("ALTER TABLE orders ADD COLUMN order_name TEXT"))
+            if 'order_code' not in order_cols:
+                order_alters.append(text("ALTER TABLE orders ADD COLUMN order_code TEXT"))
+            if 'kit_id' not in order_cols:
+                order_alters.append("ALTER TABLE orders ADD COLUMN kit_id INTEGER")
             if 'location' not in order_cols:
                 order_alters.append("ALTER TABLE orders ADD COLUMN location TEXT")
             if 'order_name' not in order_cols:
@@ -240,7 +260,7 @@ async def ensure_demo_files() -> None:
     ]
     special_id = 4
     special_filename = "demo_milling_default.stp"
-    models_dir = Path(os.getenv("UPLOAD_DIR", "uploads/3d_models"))
+    models_dir = Path(UPLOAD_DIR)
     models_dir.mkdir(parents=True, exist_ok=True)
 
     async with AsyncSessionLocal() as session:
@@ -405,3 +425,156 @@ async def ensure_users_new_columns() -> None:
         except Exception as e:
             await session.rollback()
             logger.error(f"Error ensuring users table: {e}", exc_info=True)
+
+def _env_json_dict(var_name: str) -> Dict[str, str]:
+    raw = os.getenv(var_name, "").strip()
+    if not raw:
+        logger.info(f"Failed to parse {var_name} from env")
+        try: 
+            raw = ADMIN_LOCATION_OVERRIDES_JSON.strip()
+        except:
+            logger.info(f"Failed to parse {var_name} from config")
+
+    try:
+        data = json.loads(raw)
+        if isinstance(data, dict):
+            return {str(k): str(v) for k, v in data.items() if v is not None}
+    except Exception:
+        logger.info(f"Failed to parse {var_name} finally")
+    return {}
+
+
+async def ensure_users_location_column():
+    async with AsyncSessionLocal() as db:
+        cols = await db.execute(text("PRAGMA table_info(users)"))
+        colnames = {row[1] for row in cols.fetchall()}  # row: (cid, name, type, notnull, dflt_value, pk)
+        if "location" not in colnames:
+            logger.info("DB migrate: adding users.location column")
+            await db.execute(text("ALTER TABLE users ADD COLUMN location TEXT"))
+            await db.commit()
+
+async def backfill_users_location_from_kits():
+    async with AsyncSessionLocal() as db:
+        # Берём последнее известное значение location по китам пользователя
+        # updated_at/created_at в kits есть :contentReference[oaicite:15]{index=15}
+        logger.info("DB migrate: backfilling users.location from kits.location")
+        await db.execute(text("""
+            UPDATE users
+            SET location = (
+                SELECT k.location
+                FROM kits k
+                WHERE k.user_id = users.id
+                AND k.location IS NOT NULL AND TRIM(k.location) <> ''
+                ORDER BY COALESCE(k.updated_at, k.created_at) DESC
+                LIMIT 1
+            )
+            WHERE (location IS NULL OR TRIM(location) = '')
+            AND EXISTS (
+                SELECT 1 FROM kits k2
+                WHERE k2.user_id = users.id
+                AND k2.location IS NOT NULL AND TRIM(k2.location) <> ''
+            )
+        """))
+        await db.commit()
+
+
+async def apply_admin_location_overrides(
+        overrides: Dict[str, str],
+        default_location: str = "location_1"
+    ):
+    async with AsyncSessionLocal() as db:
+        if not overrides:
+            logger.info("DB migrate: no ADMIN_LOCATION_OVERRIDES_JSON provided")
+        else:
+            for username, location in overrides.items():
+                loc = (location or "").strip()
+                if not loc:
+                    continue
+                await db.execute(
+                    text("UPDATE users SET location = :loc WHERE username = :u"),
+                    {"loc": loc, "u": username}
+                )
+                logger.info(f"DB migrate: applying admin location overrides by {username}")
+
+        logger.info(f"DB migrate: setting default location {default_location} for users without location")
+        await db.execute(
+            text(
+                """
+                UPDATE users
+                SET location = :default_loc
+                WHERE location IS NULL OR TRIM(location) = ''
+                """
+            ),
+            {"default_loc": default_location}
+        )
+        await db.commit()
+
+async def ensure_maas_bitrix_ids_mapping_table() -> None:
+    """Ensure maas_bitrix_ids_mapping table exists and has all required columns"""
+    async with AsyncSessionLocal() as session:
+        try:
+            # Check if table exists
+            result = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='maas_bitrix_ids_mapping'")
+            )
+            table_exists = result.first() is not None
+            
+            if not table_exists:
+                # Create table using SQLAlchemy metadata
+                async with engine.begin() as conn:
+                    await conn.run_sync(MaasBitrixIdsMapping.__table__.create)
+                logger.info("Created maas_bitrix_ids_mapping table")
+            else:
+                # Check if all columns exist
+                result = await session.execute(text("PRAGMA table_info('maas_bitrix_ids_mapping')"))
+                mapping_cols = {row[1] for row in result}
+                mapping_alters = []
+                
+                required_columns = {
+                    'id': 'INTEGER PRIMARY KEY',
+                    'maas_id': 'INTEGER NOT NULL',
+                    'bitrix_id': 'INTEGER NOT NULL',
+                    'entity_type': 'VARCHAR(32) NOT NULL',
+                    'buffer': 'JSON',
+                    'created_at': 'DATETIME',
+                    'updated_at': 'DATETIME'
+                }
+                
+                for col_name, col_type in required_columns.items():
+                    if col_name not in mapping_cols:
+                        if col_name == 'id':
+                            continue  # Skip primary key
+                        alter_stmt = f"ALTER TABLE maas_bitrix_ids_mapping ADD COLUMN {col_name} {col_type}"
+                        mapping_alters.append(alter_stmt)
+                
+                for stmt in mapping_alters:
+                    await session.execute(text(stmt))
+                
+                if mapping_alters:
+                    await session.commit()
+                    logger.info(f"Added {len(mapping_alters)} columns to maas_bitrix_ids_mapping table")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error ensuring maas_bitrix_ids_mapping table: {e}", exc_info=True)
+
+
+async def ensure_constant_entity_tables() -> None:
+    """Ensure Bitrix24 constant-entity source-of-truth tables exist (bitrix_category, bitrix_status, bitrix_userfield, bitrix_userfield_enum, bitrix_product_property, bitrix_product_property_enum)."""
+    async with AsyncSessionLocal() as session:
+        try:
+            result = await session.execute(
+                text("SELECT name FROM sqlite_master WHERE type='table' AND name='bitrix_category'")
+            )
+            if result.first() is not None:
+                return
+            async with engine.begin() as conn:
+                await conn.run_sync(BitrixCategory.__table__.create)
+                await conn.run_sync(BitrixStatus.__table__.create)
+                await conn.run_sync(BitrixUserfield.__table__.create)
+                await conn.run_sync(BitrixUserfieldEnum.__table__.create)
+                await conn.run_sync(BitrixProductProperty.__table__.create)
+                await conn.run_sync(BitrixProductPropertyEnum.__table__.create)
+            logger.info("Created constant-entity tables: bitrix_category, bitrix_status, bitrix_userfield, bitrix_userfield_enum, bitrix_product_property, bitrix_product_property_enum")
+        except Exception as e:
+            await session.rollback()
+            logger.error(f"Error ensuring constant-entity tables: {e}", exc_info=True)

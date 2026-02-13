@@ -2,7 +2,6 @@
 Files storage module
 File system operations for file uploads and management
 """
-import os
 import uuid
 import shutil
 import json
@@ -11,6 +10,8 @@ from typing import Optional, Dict, Any
 from pathlib import Path
 from fastapi import HTTPException
 import logging
+
+from backend.core.config import TEMP_DIR, UPLOAD_DIR
 
 # For future S3 implementation
 # import boto3
@@ -23,11 +24,10 @@ class FileStorageService:
     
     def __init__(self, base_path: str = None):
         if base_path is None:
-            base_path = os.getenv("UPLOAD_DIR", "uploads/3d_models")
-        
+            base_path = UPLOAD_DIR
         self.base_path = Path(base_path)
         self.models_path = self.base_path
-        self.temp_path = Path(os.getenv("TEMP_DIR", "uploads/temp"))
+        self.temp_path = Path(TEMP_DIR)
         
         # Ensure directories exist
         self.models_path.mkdir(parents=True, exist_ok=True)

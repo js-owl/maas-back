@@ -2,7 +2,6 @@
 Documents storage module
 Document file system operations
 """
-import os
 import uuid
 import shutil
 import json
@@ -12,6 +11,8 @@ from fastapi import HTTPException
 import logging
 from pathlib import Path
 
+from backend.core.config import DOCUMENTS_DIR, TEMP_DIR
+
 logger = logging.getLogger(__name__)
 
 class DocumentStorageService:
@@ -19,11 +20,10 @@ class DocumentStorageService:
     
     def __init__(self, base_path: str = None):
         if base_path is None:
-            base_path = os.getenv("DOCUMENTS_DIR", "uploads/documents")
-        
+            base_path = DOCUMENTS_DIR
         self.base_path = Path(base_path)
         self.documents_path = self.base_path
-        self.temp_path = Path(os.getenv("TEMP_DIR", "uploads/temp"))
+        self.temp_path = Path(TEMP_DIR)
         
         # Ensure directories exist
         self.documents_path.mkdir(parents=True, exist_ok=True)

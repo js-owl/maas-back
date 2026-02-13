@@ -8,7 +8,6 @@ from typing import Dict, Any
 # Base URLs
 BASE_URL = os.getenv("TEST_BASE_URL", "http://localhost:8000")
 CALCULATOR_URL = os.getenv("CALCULATOR_BASE_URL", "http://localhost:7000")
-BITRIX_WEBHOOK_URL = os.getenv("BITRIX_WEBHOOK_URL") or os.getenv("BITRIX24_WEBHOOK_URL", "")
 
 # Timeouts (in seconds)
 DEFAULT_TIMEOUT = 30.0
@@ -34,7 +33,6 @@ TEST_LARGE_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 # Service availability
 CHECK_CALCULATOR_SERVICE = True
-CHECK_BITRIX_SERVICE = True
 SKIP_ON_SERVICE_UNAVAILABLE = True
 
 # Test execution settings
@@ -63,32 +61,6 @@ MOCK_CALCULATOR_RESPONSE: Dict[str, Any] = {
     "mat_volume": 0.000125,
     "total_time": 2.5,
     "manufacturing_cycle": "2-3 days"
-}
-
-MOCK_BITRIX_DEAL_RESPONSE: Dict[str, Any] = {
-    "result": {
-        "id": "12345",
-        "title": "Test Deal",
-        "stage_id": "NEW",
-        "opportunity": "150.50",
-        "currency_id": "USD"
-    }
-}
-
-MOCK_BITRIX_WEBHOOK_PAYLOAD: Dict[str, Any] = {
-    "event": "ONCRMDEALUPDATE",
-    "data": {
-        "FIELDS": {
-            "ID": "12345",
-            "TITLE": "Test Deal",
-            "STAGE_ID": "WON"
-        }
-    },
-    "ts": "1234567890",
-    "auth": {
-        "domain": "test.bitrix24.com",
-        "application_token": "test_token"
-    }
 }
 
 # Test materials and services
@@ -134,7 +106,6 @@ def get_test_config() -> Dict[str, Any]:
     return {
         "base_url": BASE_URL,
         "calculator_url": CALCULATOR_URL,
-        "bitrix_webhook_url": BITRIX_WEBHOOK_URL,
         "timeouts": {
             "default": DEFAULT_TIMEOUT,
             "quick": QUICK_TIMEOUT,
@@ -143,7 +114,6 @@ def get_test_config() -> Dict[str, Any]:
         },
         "service_checks": {
             "calculator": CHECK_CALCULATOR_SERVICE,
-            "bitrix": CHECK_BITRIX_SERVICE,
             "skip_on_unavailable": SKIP_ON_SERVICE_UNAVAILABLE,
         },
         "cleanup": {

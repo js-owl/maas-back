@@ -12,7 +12,7 @@ import time
 from backend import models, schemas
 from backend.core.dependencies import get_db
 from backend.auth.service import decode_access_token
-from backend.calculations.service import call_calculator_service, analyze_stp_file
+from backend.calculations.service import call_calculator_service
 from backend.calculations.proxy import get_services, get_other_services, get_materials, get_coefficients, get_locations
 from backend.utils.logging import get_logger
 from sqlalchemy import select
@@ -192,7 +192,7 @@ async def calculate_price(
     # Validate material_id against available materials from calculator service
     try:
         materials_response = await get_materials()
-        logger.info(f"Materials response: {materials_response}")
+        # logger.info(f"Materials response: {materials_response}")
         # Extract materials list from response
         if isinstance(materials_response, dict) and "materials" in materials_response:
             available_materials = [mat.get("id") for mat in materials_response["materials"] if isinstance(mat, dict) and "id" in mat]
@@ -229,7 +229,7 @@ async def calculate_price(
         
         # Start timing calculator service call specifically
         calc_service_start_time = time.time()
-        
+        logger.info("call calculator")
         calc_res = await call_calculator_service(
             service_id=request_data.service_id,  # Pass service_id directly
             material_id=material_id,
@@ -266,7 +266,7 @@ async def calculate_price(
     
     # Map to simple shape aligning with /orders calc usage
     data = calc_res if isinstance(calc_res, dict) else {}
-    logger.info(f"Calculator service response data: {data}")
+    # logger.info(f"Calculator service response data: {data}")
     
     # Determine calculation type (ML-based vs rule-based)
     calculation_type = "unknown"
@@ -291,12 +291,18 @@ async def calculate_price(
     
     # Prepare response with appropriate dimension field
     extracted_dimensions = data.get("extracted_dimensions", {})
+    if extracted_dimensions is not None:
+        length = round(extracted_dimensions.get("length", 0), 0)
+        width = round(extracted_dimensions.get("width", 0), 0)
+        height = round(extracted_dimensions.get("thickness", 0), 0)
+    else:
+        length, width, height = 0, 0, 0
     response = {
         "service_id": request_data.service_id,
         "quantity": quantity,
-        "length": round(extracted_dimensions.get("length", 0), 0),
-        "width": round(extracted_dimensions.get("width", 0), 0),
-        "height": round(extracted_dimensions.get("thickness", 0), 0),
+        "length": length,
+        "width": width,
+        "height": height,
         "n_dimensions": n_dimensions,
         "k_otk": k_otk,  # OTK (quality control) coefficient
         "mat_volume": data.get("mat_volume"),
