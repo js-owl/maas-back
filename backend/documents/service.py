@@ -160,7 +160,7 @@ async def create_document_from_file_path(
             "file_type": file_type,
             "uploaded_by": user_id,
             "document_category": category,
-            "uploaded_at": datetime.now(timezone.utc)
+            "uploaded_at": datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Create database record

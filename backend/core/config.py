@@ -14,7 +14,7 @@ ALGORITHM = os.getenv("ALGORITHM", "HS256")
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 APP_VERSION = os.getenv("APP_VERSION", "3.2.0")
 APP_TITLE = os.getenv("APP_TITLE", "Manufacturing Service API")
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./data/shop.db")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend")
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin")
 
@@ -22,7 +22,7 @@ ADMIN_DEFAULT_PASSWORD = os.getenv("ADMIN_DEFAULT_PASSWORD", "admin")
 CALCULATOR_BASE_URL = os.getenv("CALCULATOR_BASE_URL", "http://localhost:7000")
 
 # Redis
-REDIS_HOST = os.getenv("REDIS_HOST", "redis-dev")
+REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
 REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
@@ -37,6 +37,9 @@ BITRIX_VERIFY_TLS = os.getenv("BITRIX_VERIFY_TLS", "false").lower() == "true"
 # Product catalog: iblockId for ProductCreate (catalog.product.add).
 # Source: config (env BITRIX_PRODUCT_IBLOCK_ID). Use one catalog for synced products; set in deployment to the target Bitrix iblock ID.
 BITRIX_PRODUCT_IBLOCK_ID = int(os.getenv("BITRIX_PRODUCT_IBLOCK_ID", "14"))
+# Reverse sync (Bitrix24 → MaaS): enable and run interval in seconds.
+BITRIX_REVERSE_SYNC_ENABLED = os.getenv("BITRIX_REVERSE_SYNC_ENABLED", "true").lower() == "true"
+BITRIX_REVERSE_SYNC_INTERVAL_SECONDS = int(os.getenv("BITRIX_REVERSE_SYNC_INTERVAL_SECONDS", "300"))
 
 # CORS
 _cors_origins_raw = os.getenv("CORS_ORIGINS", '["*"]')
@@ -59,4 +62,6 @@ PREVIEW_DIR = os.getenv("PREVIEW_DIR", "uploads/previews")
 DOCUMENTS_DIR = os.getenv("DOCUMENTS_DIR", "uploads/documents")
 
 # Specific locations to some users
-ADMIN_LOCATION_OVERRIDES_JSON = '{"diam-aero": "location_2", "AODMZ": "location_2", "AOIKAR": "location_1", "KTSPECTR": "location_3"}'
+ADMIN_LOCATION_OVERRIDES_JSON = os.getenv("ADMIN_LOCATION_OVERRIDES_JSON", '{"AODMZ": "location_2", "AOIKAR": "location_1", "KTSPECTR": "location_3", "diam-aero": "location_2"}')
+DEFAULT_LOCATION = os.getenv("DEFAULT_LOCATION", None)
+DEFAULT_BITRIX_CATEGORY_NAME = os.getenv("DEFAULT_BITRIX_CATEGORY_NAME", "MaaS")

@@ -195,7 +195,7 @@ async def update_mapping(
             # Replace buffer
             mapping.buffer = buffer
     
-    mapping.updated_at = datetime.now(timezone.utc)
+    mapping.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     
     db.add(mapping)
     await db.commit()

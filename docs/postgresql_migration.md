@@ -437,7 +437,7 @@ The migration from SQLite to PostgreSQL will provide:
 
 3. **Update Configuration**
    ```env
-   DATABASE_URL=sqlite+aiosqlite:///./data/shop.db
+   DATABASE_URL=postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend
    ```
 
 4. **Restart Application**

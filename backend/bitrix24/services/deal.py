@@ -31,7 +31,7 @@ class DealService:
         return int(result)
 
     async def get(self, id: int) -> Deal:
-        """Get a deal by ID."""
+        """Get a deal by ID (includes userfields in model extra)."""
         result = await self._client.call("crm.deal.get", {"id": id})
         return Deal.model_validate(result)
 

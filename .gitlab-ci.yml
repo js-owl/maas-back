@@ -109,6 +109,28 @@ build:development:
       else
         echo "⚠️ Could not pull Redis image, will skip pushing"
       fi
+    # Pull Postgres image: try maas-hosted first, fallback to maas-proxy
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 2>/dev/null; then
+        echo "✅ Pulled Postgres from maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/postgres:18 2>/dev/null; then
+        echo "✅ Pulled Postgres from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/postgres:18 ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18
+      else
+        echo "⚠️ Could not pull Postgres image, will skip pushing"
+      fi
+    # Pull pgAdmin image (dpage/pgadmin4:9): try maas-hosted first, fallback to maas-proxy
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 2>/dev/null; then
+        echo "✅ Pulled pgAdmin from maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/dpage/pgadmin4:9 2>/dev/null; then
+        echo "✅ Pulled pgAdmin from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/dpage/pgadmin4:9 ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9
+      else
+        echo "⚠️ Could not pull pgAdmin image, will skip pushing"
+      fi
   script:
     # Build image with private registry credentials and cache
     - |
@@ -129,9 +151,14 @@ build:development:
     - docker push $DEV_BUILD_IMAGE:dev-latest
     # Push Redis image to build registry
     - docker push ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || true
+    # Push Postgres and pgAdmin images to build registry
+    - docker push ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 || true
+    - docker push ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
     # Clean up local images
     - docker rmi $DEV_BUILD_IMAGE:${CI_COMMIT_TAG} $DEV_BUILD_IMAGE:dev-latest || true
     - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || true
+    - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 || true
+    - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
   only:
     - /^dev-v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -293,6 +320,7 @@ deploy:development:
   script:
     - scp -P $DEV_SSH_PORT docker-compose.dev.yml $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/
     - scp -P $DEV_SSH_PORT .env.development $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/.env
+    - scp -P $DEV_SSH_PORT -r config $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/
     # Deploy to remote development server
     - |
       ssh -p $DEV_SSH_PORT $DEV_SSH_USER@$DEV_SSH_HOST << EOF
@@ -336,10 +364,22 @@ deploy:development:
         sudo chown -R ${DEV_SSH_USER}:${DEV_SSH_USER} ${DEV_REMOTE_PROJECT_PATH}/redis-data
         echo "✅ Created and configured redis-data directory"
         
+        # Create postgres-data-dev directory for PostgreSQL (docker-compose.dev.yml)
+        echo "📁 Creating postgres-data-dev directory..."
+        sudo mkdir -p ${DEV_REMOTE_PROJECT_PATH}/postgres-data-dev
+        sudo chown -R ${DEV_SSH_USER}:${DEV_SSH_USER} ${DEV_REMOTE_PROJECT_PATH}/postgres-data-dev
+        echo "✅ Created and configured postgres-data-dev directory"
+        
         # Pull Redis image before backend
         echo "📥 Pulling Redis image..."
         sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/redis:8.2.3 || echo "⚠️ Could not pull Redis image, will use fallback"
         echo "✅ Redis image pull completed"
+        
+        # Pull Postgres and pgAdmin images (proxy/hosted)
+        echo "📥 Pulling Postgres and pgAdmin images..."
+        sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/postgres:18 || echo "⚠️ Could not pull Postgres image"
+        sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || sudo docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/dpage/pgadmin4:9 || echo "⚠️ Could not pull pgAdmin image"
+        echo "✅ Postgres and pgAdmin image pull completed"
         
         # Update docker-compose.dev.yml image tag
         echo "🔄 Updating docker-compose.dev.yml with new image tag..."

@@ -49,6 +49,7 @@ services:
       - ./data:/app/data
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./scripts:/app/scripts
     deploy:
       replicas: 1
       resources:
@@ -67,9 +68,10 @@ services:
     image: ${NEXUS_BUILD_REGISTRY:-vortex.kronshtadt.ru:8443}/maas-proxy/redis:8.2.3
     container_name: redis-dev
     user: 1001:1001
-    volumes:
-      - ./redis-data:/data
-    command: redis-server --appendonly yes --appendfsync everysec
+    # volumes:
+    #   - ./redis-data:/data
+    # command: redis-server --appendonly yes --appendfsync everysec
+    command: redis-server --appendonly no --save ""
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -94,16 +96,54 @@ services:
         delay: 5s
         max_attempts: 3
 
+  postgres:
+    image: ${NEXUS_BUILD_REGISTRY:-vortex.kronshtadt.ru:8443}/maas-proxy/postgres:18
+    container_name: postgres-dev
+    environment:
+      POSTGRES_DB: maas_backend
+      POSTGRES_USER: ${POSTGRES_USER:-maas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maas_local_pass}
+    volumes:
+      - ./postgres-data-dev:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maas_user} -d maas_backend"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - maas-internal
+
+  pgadmin:
+    image: ${NEXUS_BUILD_REGISTRY:-vortex.kronshtadt.ru:8443}/maas-proxy/dpage/pgadmin4:9
+    container_name: pgadmin-dev
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@local.dev}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-pgadmin_local}
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    ports:
+      - "5050:80"
+    volumes:
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./config/pgadmin/pgpass:/pgadmin4/pgpass:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - maas-internal
+
 networks:
   maas-internal:
     external: true
   traefik-global-proxy:
     external: true
 
-volumes:
-  uploads:
-  logs:
-  data:
-  main:
-  redis-data:
+#volumes:
+#  uploads:
+#  logs:
+#  data:
+#  main:
+#  redis-data:
 

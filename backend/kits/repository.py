@@ -31,7 +31,6 @@ async def create_kit(
     kit_name: Optional[str],
     quantity: int,
     status: str,
-    bitrix_deal_id: Optional[int],
     location: Optional[str],
     order_ids: List[int],
 ) -> models.Kit:
@@ -40,7 +39,6 @@ async def create_kit(
         kit_name=kit_name,
         quantity=quantity,
         status=status,
-        bitrix_deal_id=bitrix_deal_id,
         location=location,
         order_ids=json.dumps([int(x) for x in order_ids]),
     )
@@ -61,7 +59,8 @@ async def update_kit(
     kit_name: Optional[str] = None,
     quantity: Optional[int] = None,
     status: Optional[str] = None,
-    bitrix_deal_id: Optional[int] = None,
+    kit_price: Optional[float] = None,
+    delivery_price: Optional[float] = None,
     location: Optional[str] = None,
     order_ids: Optional[list[int]] = None,
 ) -> models.Kit:
@@ -71,8 +70,10 @@ async def update_kit(
         kit.quantity = quantity
     if status is not None:
         kit.status = status
-    if bitrix_deal_id is not None:
-        kit.bitrix_deal_id = bitrix_deal_id
+    if kit_price is not None:
+        kit.kit_price = kit_price
+    if delivery_price is not None:
+        kit.delivery_price = delivery_price
     if location is not None:
         kit.location = location
     if order_ids is not None:

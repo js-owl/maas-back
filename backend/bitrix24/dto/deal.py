@@ -192,3 +192,11 @@ class Deal(BaseModel):
     UTM_TERM: str | None = None
 
     model_config = {"populate_by_name": True, "extra": "allow"}
+
+    def to_dict(self) -> dict[str, Any]:
+        """Full dict representation including extra fields (e.g. UF_CRM_* from API)."""
+        data = self.model_dump(mode="json")
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra:
+            data.update(extra)
+        return data

@@ -109,7 +109,7 @@ backend/{module}/
 
 ### Current Database: SQLite
 
-**Connection**: `sqlite+aiosqlite:///./data/shop.db`
+**Connection**: `postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend`
 
 **Key Tables**:
 - `users` - User accounts and profiles
@@ -426,7 +426,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=sqlite+aiosqlite:///./data/shop.db
+      - DATABASE_URL=postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend
       - CALCULATOR_SERVICE_URL=http://calculator:7000
   
   calculator:

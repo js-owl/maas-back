@@ -33,6 +33,24 @@ _ENTITY_DEAL = "CRM_DEAL"
 _KIND_DEAL = "deal_userfield"
 _KIND_PRODUCT = "product_property"
 
+# Maps product property code → key in the list_values dict from fetch_list_values().
+# Used to override static enums with live labels from the calculator service.
+_PRODUCT_CODE_TO_LIST_KEY: dict[str, str] = {
+    "UP_CAT_MATERIAL": "materials",
+    "UP_CAT_SERVICE": "services",
+    "UP_CAT_ACCURACY": "tolerance",
+    "UP_CAT_ROUGHNESS": "finish",
+    "UP_CAT_FINISHING": "cover",
+    "UP_CAT_CONTROL": "control_types",
+    "UP_CAT_CERTIFICATES": "cert_costs",
+}
+
+# Maps deal userfield name → key in list_values dict.
+# Empty: no deal list fields are currently backed by external lists.
+_DEAL_FIELD_TO_LIST_KEY: dict[str, str] = {
+    "UF_CRM_MANUFACTURER": "locations",
+}
+
 
 def _enum_sort(index: int) -> int:
     """Sort value for enumeration item (must be a multiple of 100)."""
@@ -237,48 +255,159 @@ def _product_property_payload(entry: dict[str, Any], iblock_id: int) -> dict[str
 
 
 # ---------------------------------------------------------------------------
+# External-list enum resolution helpers
+# ---------------------------------------------------------------------------
+
+
+def _labels_from_list_values(list_values: dict[str, Any], list_key: str) -> list[str]:
+    """Extract display labels from a list_values entry (produced by fetch_list_values()).
+
+    Items are expected to be dicts with a ``label`` key (e.g. ``{"id": …, "label": …}``).
+    Plain string items are used as-is for forward compatibility.
+    """
+    items = list_values.get(list_key) or []
+    labels: list[str] = []
+    for item in items:
+        if isinstance(item, dict):
+            label = item.get("label")
+            if label is not None:
+                labels.append(str(label))
+        elif item is not None:
+            labels.append(str(item))
+    return labels
+
+
+def _resolve_entry_enums(
+    entry: dict[str, Any],
+    list_values: dict[str, Any] | None,
+) -> list[str] | None:
+    """Return enum labels for a store entry.
+
+    When ``list_values`` is provided and the entry maps to an external list,
+    live labels from that list take precedence over the static ``enums`` defined
+    in the store. Falls back to the static enums when the external list is absent
+    or returns no items.
+    """
+    if list_values:
+        kind = entry.get(_KIND_KEY)
+        if kind == _KIND_PRODUCT:
+            list_key = _PRODUCT_CODE_TO_LIST_KEY.get(entry.get("code") or "")
+        elif kind == _KIND_DEAL:
+            list_key = _DEAL_FIELD_TO_LIST_KEY.get(entry.get("FIELD_NAME") or "")
+        else:
+            list_key = None
+        if list_key:
+            labels = _labels_from_list_values(list_values, list_key)
+            if labels:
+                return labels
+    return entry.get(_ENUMS_KEY)
+
+
+# ---------------------------------------------------------------------------
+# Enum helpers: add only missing values to an existing parent
+# ---------------------------------------------------------------------------
+
+
+async def _seed_missing_userfield_enums(
+    db: AsyncSession,
+    userfield_id: int,
+    prefix: str,
+    enums: list[str],
+) -> int:
+    """Insert enum rows whose ``value`` is not yet present for the given userfield.
+
+    Returns the number of rows actually inserted.
+    Position-based ``sort`` and ``xml_id`` are derived from the full expected list
+    so that ordering stays consistent even when only a subset is added.
+    """
+    existing = await repo.userfield_enum_list_by_userfield(db, userfield_id)
+    existing_values = {e.value for e in existing}
+    added = 0
+    for idx, value in enumerate(enums, start=1):
+        if value not in existing_values:
+            await repo.userfield_enum_create(
+                db,
+                userfield_id=userfield_id,
+                sort=_enum_sort(idx),
+                value=value,
+                def_=_DEF_ENUM,
+                xml_id=_enum_xml_id(prefix, idx),
+            )
+            added += 1
+    return added
+
+
+async def _seed_missing_product_property_enums(
+    db: AsyncSession,
+    property_id: int,
+    prefix: str,
+    enums: list[str],
+) -> int:
+    """Insert enum rows whose ``value`` is not yet present for the given property.
+
+    Returns the number of rows actually inserted.
+    """
+    existing = await repo.product_property_enum_list_by_property(db, property_id)
+    existing_values = {e.value for e in existing}
+    added = 0
+    for idx, value in enumerate(enums, start=1):
+        if value not in existing_values:
+            await repo.product_property_enum_create(
+                db,
+                property_id=property_id,
+                value=value,
+                xml_id=_enum_xml_id(prefix, idx),
+                def_=_DEF_ENUM,
+                sort=_enum_sort(idx),
+            )
+            added += 1
+    return added
+
+
+# ---------------------------------------------------------------------------
 # Seed: one entity (uses payload with only present fields)
 # ---------------------------------------------------------------------------
 
 
-async def _seed_one_userfield(db: AsyncSession, entry: dict[str, Any]) -> None:
-    """Create one userfield from store entry; then create enum rows if enums present."""
+async def _seed_one_userfield(
+    db: AsyncSession,
+    entry: dict[str, Any],
+    list_values: dict[str, Any] | None = None,
+) -> BitrixUserfield:
+    """Create one userfield from store entry; then create enum rows if enums present.
+
+    When ``list_values`` is provided, enum labels are resolved from the external
+    list mapped to this field (via ``_DEAL_FIELD_TO_LIST_KEY``), falling back to
+    the static ``enums`` defined in the store entry.
+    """
     payload = _userfield_payload(entry)
     uf = await repo.userfield_create(db, payload)
-    enums = entry.get(_ENUMS_KEY)
-    if not enums:
-        return
-    prefix = payload.get("XML_ID") or payload.get("FIELD_NAME", "UF")
-    for idx, value in enumerate(enums, start=1):
-        await repo.userfield_enum_create(
-            db,
-            userfield_id=uf.id,
-            sort=_enum_sort(idx),
-            value=value,
-            def_=_DEF_ENUM,
-            xml_id=_enum_xml_id(prefix, idx),
-        )
+    enums = _resolve_entry_enums(entry, list_values)
+    if enums:
+        prefix = payload.get("XML_ID") or payload.get("FIELD_NAME", "UF")
+        await _seed_missing_userfield_enums(db, uf.id, prefix, enums)
+    return uf
 
 
 async def _seed_one_product_property(
-    db: AsyncSession, entry: dict[str, Any], iblock_id: int
-) -> None:
-    """Create one product property from store entry; then create enum rows if enums present."""
+    db: AsyncSession,
+    entry: dict[str, Any],
+    iblock_id: int,
+    list_values: dict[str, Any] | None = None,
+) -> BitrixProductProperty:
+    """Create one product property from store entry; then create enum rows if enums present.
+
+    When ``list_values`` is provided, enum labels are resolved from the external
+    list mapped to this property (via ``_PRODUCT_CODE_TO_LIST_KEY``), falling back
+    to the static ``enums`` defined in the store entry.
+    """
     payload = _product_property_payload(entry, iblock_id)
     prop = await repo.product_property_create(db, payload)
-    enums = entry.get(_ENUMS_KEY)
-    if not enums:
-        return
-    prefix = entry.get("xmlId") or entry.get("code", "P")
-    for idx, value in enumerate(enums, start=1):
-        await repo.product_property_enum_create(
-            db,
-            property_id=prop.id,
-            value=value,
-            xml_id=_enum_xml_id(prefix, idx),
-            def_=_DEF_ENUM,
-            sort=_enum_sort(idx),
-        )
+    enums = _resolve_entry_enums(entry, list_values)
+    if enums:
+        prefix = entry.get("xmlId") or entry.get("code", "P")
+        await _seed_missing_product_property_enums(db, prop.id, prefix, enums)
+    return prop
 
 
 # ---------------------------------------------------------------------------
@@ -286,30 +415,81 @@ async def _seed_one_product_property(
 # ---------------------------------------------------------------------------
 
 
-async def _seed_constant_entities(db: AsyncSession, iblock_id: int, store: EntityStore) -> None:
-    """Seed all entities from store; only present fields are sent."""
+async def _seed_constant_entities(
+    db: AsyncSession,
+    iblock_id: int,
+    store: EntityStore,
+    list_values: dict[str, Any] | None = None,
+) -> None:
+    """Seed all entities from store; only present fields are sent.
+
+    Each store entry is checked individually by its natural key (``FIELD_NAME``
+    for userfields, ``code`` for product properties).  Only missing records are
+    inserted, so this is safe to run against a partially-populated table.
+
+    When ``list_values`` (from ``fetch_list_values()``) is provided, list-type
+    fields whose codes are in ``_PRODUCT_CODE_TO_LIST_KEY`` /
+    ``_DEAL_FIELD_TO_LIST_KEY`` will use live labels from the calculator service
+    instead of the static fallback enums defined in the store.
+    """
     deal_entries = store.deal_entries()
     product_entries = store.product_entries()
 
-    if deal_entries:
-        result = await db.execute(select(BitrixUserfield).limit(1))
-        if result.first() is None:
-            for entry in deal_entries:
-                await _seed_one_userfield(db, entry)
-            logger.info("Seeded %d deal userfields", len(deal_entries))
+    seeded_deals = 0
+    added_deal_enums = 0
+    for entry in deal_entries:
+        field_name = entry.get("FIELD_NAME")
+        result = await db.execute(
+            select(BitrixUserfield).where(BitrixUserfield.field_name == field_name).limit(1)
+        )
+        existing_uf = result.scalar_one_or_none()
+        if existing_uf is None:
+            await _seed_one_userfield(db, entry, list_values)
+            seeded_deals += 1
+            logger.debug("Seeded deal userfield %s", field_name)
         else:
-            logger.debug("Userfields already present, skipping deal userfield seed")
+            enums = _resolve_entry_enums(entry, list_values)
+            if enums:
+                prefix = existing_uf.xml_id or existing_uf.field_name or "UF"
+                added = await _seed_missing_userfield_enums(db, existing_uf.id, prefix, enums)
+                if added:
+                    added_deal_enums += added
+                    logger.debug("Added %d missing enum(s) for userfield %s", added, field_name)
+    if seeded_deals:
+        logger.info("Seeded %d deal userfield(s)", seeded_deals)
+    if added_deal_enums:
+        logger.info("Added %d missing deal userfield enum(s)", added_deal_enums)
 
-    if product_entries and iblock_id > 0:
-        result = await db.execute(select(BitrixProductProperty).limit(1))
-        if result.first() is None:
-            for entry in product_entries:
-                await _seed_one_product_property(db, entry, iblock_id)
-            logger.info("Seeded %d product properties (iblock_id=%s)", len(product_entries), iblock_id)
-        else:
-            logger.debug("Product properties already present, skipping seed")
-    elif product_entries and iblock_id <= 0:
+    if not product_entries:
+        return
+    if iblock_id <= 0:
         logger.debug("iblock_id=%s <= 0, skipping product property seed", iblock_id)
+        return
+
+    seeded_products = 0
+    added_product_enums = 0
+    for entry in product_entries:
+        code = entry.get("code")
+        result = await db.execute(
+            select(BitrixProductProperty).where(BitrixProductProperty.code == code).limit(1)
+        )
+        existing_prop = result.scalar_one_or_none()
+        if existing_prop is None:
+            await _seed_one_product_property(db, entry, iblock_id, list_values)
+            seeded_products += 1
+            logger.debug("Seeded product property %s", code)
+        else:
+            enums = _resolve_entry_enums(entry, list_values)
+            if enums:
+                prefix = existing_prop.xml_id or existing_prop.code or "P"
+                added = await _seed_missing_product_property_enums(db, existing_prop.id, prefix, enums)
+                if added:
+                    added_product_enums += added
+                    logger.debug("Added %d missing enum(s) for property %s", added, code)
+    if seeded_products:
+        logger.info("Seeded %d product propert(ies) (iblock_id=%s)", seeded_products, iblock_id)
+    if added_product_enums:
+        logger.info("Added %d missing product property enum(s) (iblock_id=%s)", added_product_enums, iblock_id)
 
 
 # ---------------------------------------------------------------------------
@@ -523,13 +703,20 @@ async def seed_constant_entity_initial_data(
     iblock_id: int,
     *,
     store: EntityStore | None = None,
+    list_values: dict[str, Any] | None = None,
 ) -> None:
-    """
-    Insert initial deal userfields and catalog product properties from the entity store.
+    """Insert initial deal userfields and catalog product properties from the entity store.
 
     Idempotent: no-op when tables already have rows. Product properties only when iblock_id > 0.
     Only fields that are set on each store entry are sent (partial definitions are supported).
+
     Pass a custom store to override the default; otherwise get_entity_store() is used.
+
+    Pass ``list_values`` (the dict returned by ``fetch_list_values()``) to populate
+    list-type field enumerations from the live calculator-service data instead of
+    the static fallback labels defined in the store.  Fields not present in
+    ``_PRODUCT_CODE_TO_LIST_KEY`` / ``_DEAL_FIELD_TO_LIST_KEY``, or for which the
+    external list is empty, fall back to the static enums automatically.
     """
     target = store if store is not None else get_entity_store()
-    await _seed_constant_entities(db, iblock_id, target)
+    await _seed_constant_entities(db, iblock_id, target, list_values)

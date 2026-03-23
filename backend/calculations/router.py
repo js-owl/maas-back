@@ -60,7 +60,7 @@ async def calculate_price(
     Parameters:
     - service_id: Manufacturing service type (e.g., "cnc-milling", "cnc-lathe", "printing", "painting")
     - file_id: Optional file ID for automatic analysis (STP/STEP files supported)
-    - length/width/height/thickness/dia: Manual dimensions (used if file_id not provided)
+    - length/width/height: Manual dimensions (used if file_id not provided)
     - cover_id: Array of strings for multiple cover types (e.g., ["1", "2"])
     """
     # Log the service ID being used
@@ -153,9 +153,8 @@ async def calculate_price(
     tolerance_id = request_data.tolerance_id or "1"
     finish_id = request_data.finish_id or "1"
     cover_id = request_data.cover_id or ["1"]
-    k_otk = request_data.k_otk or "1"
+    k_otk = request_data.k_otk or "1.0"
     k_cert = request_data.k_cert or ["a", "f"]
-    n_dimensions = request_data.n_dimensions or 1
     location = request_data.location or "location_1"
 
     # Process k_cert to list if passed as JSON string
@@ -238,8 +237,6 @@ async def calculate_price(
             length=request_data.length,
             width=request_data.width,
             height=request_data.height,
-            n_dimensions=n_dimensions,
-            dia=request_data.dia,
             tolerance_id=tolerance_id,
             finish_id=finish_id,
             cover_id=cover_id_for_calculator,
@@ -294,7 +291,7 @@ async def calculate_price(
     if extracted_dimensions is not None:
         length = round(extracted_dimensions.get("length", 0), 0)
         width = round(extracted_dimensions.get("width", 0), 0)
-        height = round(extracted_dimensions.get("thickness", 0), 0)
+        height = round(extracted_dimensions.get("height", 0), 0)
     else:
         length, width, height = 0, 0, 0
     response = {
@@ -303,7 +300,6 @@ async def calculate_price(
         "length": length,
         "width": width,
         "height": height,
-        "n_dimensions": n_dimensions,
         "k_otk": k_otk,  # OTK (quality control) coefficient
         "mat_volume": data.get("mat_volume"),
         "detail_price": data.get("detail_price"),
@@ -320,19 +316,10 @@ async def calculate_price(
         "total_price_breakdown": data.get("total_price_breakdown"),  # Suitable manufacturing machines from calculator service
         "calculation_type": calculation_type,  # "ml_based", "rule_based", or "unknown"
         "ml_model": data.get("ml_model"),  # ML model name if available
-        "ml_confidence": data.get("ml_confidence"),  # ML confidence score if available
         "calculation_engine": data.get("calculation_engine"),  # Original calculation engine from calculator service
         "calculation_time": calculation_time,  # Calculator service call duration only
         "total_calculation_time": total_calculation_time  # Total backend processing time
     }
-    
-    # Add dimension fields to response
-    # if request_data.height is not None: DEPRECATED
-    #     response["height"] = request_data.height
-    if request_data.thickness is not None: # DEPRECATED
-        response["thickness"] = request_data.thickness
-    if request_data.dia is not None: # DEPRECATED
-        response["dia"] = request_data.dia
     
     # File analysis is now handled by the calculator service (port 7000)
     # The calculator service will return analysis results in the response

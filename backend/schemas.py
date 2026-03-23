@@ -46,6 +46,7 @@ class UserCreate(BaseModel):
     phone_number: Optional[str] = None
     personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
+    location: Optional[str] = None
     
     @validator('user_type')
     def validate_user_type(cls, v):
@@ -115,6 +116,7 @@ class UserUpdate(BaseModel):
     payment_bank_name: Optional[str] = None
     payment_account: Optional[str] = None
     payment_cor_account: Optional[str] = None
+    location: Optional[str] = None
     
     @validator('user_type')
     def validate_user_type(cls, v):
@@ -250,19 +252,13 @@ class OrderCreate(BaseModel):
     order_name: Optional[str] = None  # Order name
     order_code: Optional[str] = None
     quantity: int = 1
-    # Accept either JSON string or separate fields
-    #dimensions: Optional[str] = None  # COMMENTED OUT: dimensions field no longer needed when length/width/height provided
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    thickness: Optional[int] = None
-    dia: Optional[int] = None
-    n_dimensions: int = 1  # Number of dimensions provided
-    composite_rig: Optional[str] = None
     material_id: str = "alum_D16"  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
     material_form: str = "rod"      # Material form (e.g., "rod", "plate", "sheet", "bar")
     special_instructions: Optional[str] = None
-    k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
+    k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     k_cert: List[str] = ["a", "f"]  # Certification types
     tolerance_id: str = "1"
     finish_id: str = "1"
@@ -335,17 +331,20 @@ class OrderUpdate(BaseModel):
     order_name: Optional[str] = None  # Order name
     order_code: Optional[str] = None
     quantity: Optional[int] = None
+    # Price fields (reverse sync from Bitrix product rows)
+    detail_price_one: Optional[float] = None  # Price per item without scale discounts
+    detail_price: Optional[float] = None  # detail_price_one * k_quantity
+    k_quantity: Optional[float] = None
+    total_price: Optional[float] = None  # detail_price_one * quantity * k_quantity
     status: Optional[str] = None
     front_status: Optional[str] = None
     special_instructions: Optional[str] = None
     material_id: Optional[str] = None  # Material ID from calculator service
     material_form: Optional[str] = None  # Material form
-    composite_rig: Optional[str] = None
     file_id: Optional[int] = None
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    n_dimensions: Optional[int] = None  # Number of dimensions provided
     k_otk: Optional[str] = None  # OTK (quality control) coefficient
     tolerance_id: Optional[str] = None
     finish_id: Optional[str] = None
@@ -353,6 +352,12 @@ class OrderUpdate(BaseModel):
     # Additional documents attached to the order
     document_ids: Optional[List[int]] = None  # List of document IDs to attach to the order
     location: Optional[str] = None
+    # Reverse sync from Bitrix product properties
+    total_price_breakdown: Optional[Dict[str, Any]] = None
+    mat_volume: Optional[float] = None
+    mat_weight: Optional[float] = None
+    manufacturing_cycle: Optional[float] = None
+    total_time: Optional[float] = None
 
     @field_validator('cover_id', mode='before')
     @classmethod
@@ -435,8 +440,6 @@ class OrderOut(BaseModel):
     length: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    n_dimensions: int  # Number of dimensions provided
-    composite_rig: Optional[str]
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
@@ -444,7 +447,7 @@ class OrderOut(BaseModel):
     status: str
     front_status: Optional[str] = None
     # Calculation coefficients
-    k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
+    k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
@@ -478,8 +481,6 @@ class OrderOut(BaseModel):
     mat_price: Optional[float] = None
     work_price: Optional[float] = None
     k_quantity: Optional[float] = None
-    k_complexity: Optional[float] = None  # Complexity coefficient from calculator service
-    #k_p: Optional[float] = None  # COMMENTED OUT: k_p field no longer needed
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
@@ -487,7 +488,6 @@ class OrderOut(BaseModel):
     # Calculation type information
     calculation_type: Optional[str] = None  # "ml_based", "rule_based", or "unknown"
     ml_model: Optional[str] = None  # ML model name if available
-    ml_confidence: Optional[float] = None  # ML confidence score if available
     # Calculation performance tracking
     calculation_time: Optional[float] = None  # Calculator service call duration only
     total_calculation_time: Optional[float] = None  # Total backend processing time
@@ -580,14 +580,12 @@ class OrderOutSimple(BaseModel):
     length: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    n_dimensions: int  # Number of dimensions provided
-    composite_rig: Optional[str]
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
     status: str
     # Calculation coefficients
-    k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
+    k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
@@ -621,8 +619,6 @@ class OrderOutSimple(BaseModel):
     mat_price: Optional[float] = None
     work_price: Optional[float] = None
     k_quantity: Optional[float] = None
-    k_complexity: Optional[float] = None  # Complexity coefficient from calculator service
-    #k_p: Optional[float] = None  # COMMENTED OUT: k_p field no longer needed
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
@@ -688,14 +684,12 @@ class OrderWithDetails(BaseModel):
     length: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    n_dimensions: int  # Number of dimensions provided
-    composite_rig: Optional[str]
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
     status: str
     # Calculation coefficients
-    k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
+    k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
@@ -729,8 +723,6 @@ class OrderWithDetails(BaseModel):
     mat_price: Optional[float] = None
     work_price: Optional[float] = None
     k_quantity: Optional[float] = None
-    k_complexity: Optional[float] = None  # Complexity coefficient from calculator service
-    #k_p: Optional[float] = None  # COMMENTED OUT: k_p field no longer needed
     total_time: Optional[float] = None
     manufacturing_cycle: Optional[float] = None  # Manufacturing cycle from calculator service
     suitable_machines: Optional[List[str]] = None  # Suitable manufacturing machines
@@ -741,8 +733,6 @@ class OrderWithDetails(BaseModel):
     document_ids: Optional[List[int]] = None  # List of user-uploaded document IDs
     # Bitrix-generated invoices attached to the order
     invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
-    # Bitrix integration
-    bitrix_deal_id: Optional[int] = None
     # Removed service relationship - now using calculator service IDs directly
     file: Optional[FileStorageOut] = None  # File may be None if deleted
     user: UserOut
@@ -810,15 +800,13 @@ class CalcOut(BaseModel):
     length: Optional[int]
     width: Optional[int]
     height: Optional[int]
-    n_dimensions: int  # Number of dimensions provided
-    k_otk: str = "1"  # OTK (quality control) coefficient, default "1"
+    k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     mat_volume: float
     detail_price: float
     mat_weight: float
     mat_price: float
     work_price: float
     k_quantity: float
-    #k_p: float  # COMMENTED OUT: k_p field no longer needed
     total_time: float
 
 # Order creation response schema
@@ -887,17 +875,14 @@ class CalculationRequest(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    thickness: Optional[int] = None
-    dia: Optional[int] = None
     material_id: Optional[str] = None  # Made optional - calculator can handle missing
     material_form: Optional[str] = "rod"  # Make optional
     special_instructions: Optional[str] = None
     tolerance_id: Optional[str] = "1"  # Make optional
     finish_id: Optional[str] = "1"  # Make optional
     cover_id: Optional[List[str]] = None  # Make optional
-    k_otk: Optional[str] = "1"  # Make optional
+    k_otk: Optional[str] = "1.0"  # Make optional
     k_cert: Optional[List[str]] = ["a", "f"]  # Make optional
-    n_dimensions: Optional[int] = 1  # Make optional
     document_ids: Optional[List[int]] = None  # Document IDs for calculation context
     location: Optional[str] = None
     
@@ -962,20 +947,74 @@ class OrderCreateRequest(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    thickness: Optional[int] = None
-    dia: Optional[int] = None
     material_id: str = "alum_D16"
     material_form: str = "rod"
     special_instructions: Optional[str] = None
     tolerance_id: str = "1"  # Default value to match OrderCreate
     finish_id: str = "1"  # Default value to match OrderCreate
     cover_id: List[str] = ["1"]  # Default value to match OrderCreate
-    k_otk: str = "1"  # Default value to match OrderCreate
+    k_otk: str = "1.0"  # Default value to match OrderCreate
     k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
-    n_dimensions: int = 1
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
     kit_id: Optional[int] = None # This attr for future. After transit from order_ids in kits
+
+
+class BasketItemIn(BaseModel):
+    service_id: str
+    order_name: Optional[str] = None
+    order_code: Optional[str] = None
+    quantity: int = 1
+    length: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    material_id: str = "alum_D16"
+    material_form: str = "rod"
+    special_instructions: Optional[str] = None
+    k_otk: str = "1.0"
+    k_cert: List[str] = ["a", "f"]
+    tolerance_id: str = "1"
+    finish_id: str = "1"
+    cover_id: List[str] = ["1"]
+    document_ids: Optional[List[int]] = []
+    location: Optional[str] = None
+    file_id: Optional[int] = None
+
+
+class BasketItemUpdate(BaseModel):
+    service_id: Optional[str] = None
+    order_name: Optional[str] = None
+    order_code: Optional[str] = None
+    quantity: Optional[int] = None
+    length: Optional[int] = None
+    width: Optional[int] = None
+    height: Optional[int] = None
+    material_id: Optional[str] = None
+    material_form: Optional[str] = None
+    special_instructions: Optional[str] = None
+    k_otk: Optional[str] = None
+    k_cert: Optional[List[str]] = None
+    tolerance_id: Optional[str] = None
+    finish_id: Optional[str] = None
+    cover_id: Optional[List[str]] = None
+    document_ids: Optional[List[int]] = None
+    location: Optional[str] = None
+    file_id: Optional[int] = None
+
+
+class BasketItemOut(BasketItemIn):
+    item_id: str
+
+
+class BasketOut(BaseModel):
+    items: List[BasketItemOut] = []
+
+
+class BasketCheckoutIn(BaseModel):
+    kit_name: str
+    quantity: int = 1
+    status: Optional[str] = None
+    location: Optional[str] = None
 
 
 # Call Request schemas
@@ -1024,8 +1063,7 @@ class KitCreate(BaseModel):
     order_ids: List[int]
     user_id: int
     quantity: int = 1
-    status: Optional[str] = "NEW"
-    bitrix_deal_id: Optional[int] = None
+    status: Optional[str] = "AWAITING_CONFIRMATION"
     location: Optional[str] = None
 
     @validator("order_ids")
@@ -1047,18 +1085,12 @@ class KitOut(BaseModel):
     kit_name: Optional[str] = None
     quantity: int
     kit_price: float | None = None
-    
     # computed
     total_kit_price: float | None = None
-
     delivery_price: float | None = None
-
     status: str
     created_at: datetime
     updated_at: datetime
-
-    bitrix_deal_id: Optional[int] = None
-    
     location: Optional[str] = None
 
     @validator("order_ids", pre=True)
@@ -1093,7 +1125,8 @@ class KitUpdate(BaseModel):
     kit_name: Optional[str] = None
     quantity: Optional[int] = None
     status: Optional[str] = None
-    bitrix_deal_id: Optional[int] = None
+    kit_price: Optional[float] = None  # Reverse sync from Bitrix deal OPPORTUNITY
+    delivery_price: Optional[float] = None  # Reverse sync from Bitrix UF_CRM_SHIPPING_COST
     location: Optional[str] = None
 
 

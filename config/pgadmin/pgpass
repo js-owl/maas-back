@@ -1,0 +1,1 @@
+postgres:5432:*:maas_user:maas_local_pass

@@ -68,6 +68,7 @@ services:
       - ./data:/app/data
       - ./uploads:/app/uploads
       - ./logs:/app/logs
+      - ./scripts:/app/scripts
     deploy:
       replicas: 1
       resources:
@@ -85,9 +86,10 @@ services:
   redis:
     image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:443}/maas-hosted/redis:8.2.3
     container_name: redis
-    volumes:
-      - ./redis-data:/data
-    command: redis-server --appendonly yes --appendfsync everysec
+    # volumes:
+    #   - ./redis-data:/data
+    # command: redis-server --appendonly yes --appendfsync everysec
+    command: redis-server --appendonly no --save ""
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -119,9 +121,9 @@ networks:
   traefik-global-proxy:
     external: true
 
-volumes:
-  uploads:
-  logs:
-  data:
-  main:
-  redis-data:
+#volumes:
+#  uploads:
+#  logs:
+#  data:
+#  main:
+#  redis-data:

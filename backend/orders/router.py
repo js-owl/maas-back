@@ -25,7 +25,7 @@ from backend.orders.service import (
 from backend.kits.service import add_order_to_kit
 from backend.bitrix24.async_queue import enqueue_operation
 from backend.bitrix24.repositories.mapping_repository import get_bitrix_id
-from backend.bitrix24.sync_payload.product import order_to_product_create, order_to_product_update
+from backend.bitrix24.sync_payload.product import order_to_product_update
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -76,8 +76,6 @@ async def create_order(
             length=request_data.length,
             width=request_data.width,
             height=request_data.height,
-            thickness=request_data.thickness,
-            dia=request_data.dia,
             material_id=request_data.material_id,
             material_form=request_data.material_form,
             special_instructions=request_data.special_instructions,
@@ -86,7 +84,6 @@ async def create_order(
             cover_id=request_data.cover_id,
             k_otk=request_data.k_otk,
             k_cert=request_data.k_cert,
-            n_dimensions=request_data.n_dimensions,
             location=request_data.location,
             document_ids=request_data.document_ids
         )
@@ -114,23 +111,6 @@ async def create_order(
             from backend.documents.service import get_documents_by_ids
             documents = await get_documents_by_ids(db, request_data.document_ids)
             # Note: Document attachment logic would go here if needed
-        
-        if BITRIX_ENABLED:
-            try:
-                product_dto = await order_to_product_create(db, db_order)
-                payload = product_dto.model_dump(exclude_none=True)
-                await enqueue_operation(
-                    entity_type="product",
-                    action="create",
-                    payload=payload,
-                    local_id=db_order.order_id,
-                    redis=redis,
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to enqueue Bitrix24 product sync for order %s",
-                    db_order.order_id,
-                )
         
         logger.info(f"Order created: {db_order.order_id} for user {current_user.id}")
         return db_order

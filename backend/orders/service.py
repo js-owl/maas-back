@@ -64,8 +64,6 @@ async def create_order_with_calculation(
             length=order_data.length,
             width=order_data.width,
             height=order_data.height,
-            n_dimensions=order_data.n_dimensions,
-            dia=order_data.dia,
             tolerance_id=order_data.tolerance_id,
             finish_id=order_data.finish_id,
             cover_id=order_data.cover_id,
@@ -98,7 +96,6 @@ async def create_order_with_calculation(
         # Add calculation type fields to calc_result
         calc_result["calculation_type"] = calculation_type
         calc_result["ml_model"] = calc_result.get("ml_model")
-        calc_result["ml_confidence"] = calc_result.get("ml_confidence")
         calc_result["calculation_time"] = calculation_time
         calc_result["total_calculation_time"] = total_calculation_time
 
@@ -106,7 +103,7 @@ async def create_order_with_calculation(
         extracted_dimensions = calc_result.get("extracted_dimensions", {})
         order_data.length = round(extracted_dimensions.get("length", 0), 0)
         order_data.width = round(extracted_dimensions.get("width", 0), 0)
-        order_data.height = round(extracted_dimensions.get("thickness", 0), 0)
+        order_data.height = round(extracted_dimensions.get("height", 0), 0)
         
         # Create order with calculation results
         db_order = await repo_create_order(db, user_id, order_data, file_id, calc_result)
@@ -148,8 +145,6 @@ async def create_order_with_dimensions(
             length=order_data.length,
             width=order_data.width,
             height=order_data.height,
-            n_dimensions=order_data.n_dimensions,
-            dia=order_data.dia,
             tolerance_id=order_data.tolerance_id,
             finish_id=order_data.finish_id,
             cover_id=order_data.cover_id,
@@ -180,7 +175,6 @@ async def create_order_with_dimensions(
         # Add calculation type fields to calc_result
         calc_result["calculation_type"] = calculation_type
         calc_result["ml_model"] = calc_result.get("ml_model")
-        calc_result["ml_confidence"] = calc_result.get("ml_confidence")
         calc_result["calculation_time"] = calculation_time
         calc_result["total_calculation_time"] = total_calculation_time
         
@@ -303,8 +297,6 @@ async def recalculate_order_price(db: AsyncSession, order: models.Order) -> bool
             length=order.length,
             width=order.width,
             height=order.height,
-            n_dimensions=order.n_dimensions,
-            dia=order.dia,
             tolerance_id=order.tolerance_id,
             finish_id=order.finish_id,
             cover_id=order.cover_id,

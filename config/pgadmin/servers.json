@@ -1,0 +1,16 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Postgres (local)",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "Username": "maas_user",
+      "MaintenanceDB": "maas_backend",
+      "SSLMode": "prefer",
+      "ConnectionParameters": {
+        "passfile": "/pgadmin4/pgpass"
+      }
+    }
+  }
+}

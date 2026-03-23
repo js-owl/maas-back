@@ -25,7 +25,6 @@ async def create_kit_from_orders(
     kit_name: Optional[str],
     quantity: int,
     status: str = "pending",
-    bitrix_deal_id: Optional[int] = None,
     location: Optional[str] = None, # DEPRECATED
     order_ids: List[int],
 ) -> models.Kit:
@@ -58,7 +57,6 @@ async def create_kit_from_orders(
         kit_name=kit_name,
         quantity=quantity,
         status=status,
-        bitrix_deal_id=bitrix_deal_id,
         location=user_location,
         order_ids=order_ids,
     )
@@ -155,7 +153,8 @@ async def update_kit(
     kit_name: Optional[str] = None,
     quantity: Optional[int] = None,
     status: Optional[str] = None,
-    bitrix_deal_id: Optional[int] = None,
+    kit_price: Optional[float] = None,
+    delivery_price: Optional[float] = None,
     location: Optional[str] = None,
     order_ids: Optional[List[int]] = None,
 ) -> models.Kit:
@@ -191,7 +190,8 @@ async def update_kit(
         kit_name=kit_name,
         quantity=quantity,
         status=status,
-        bitrix_deal_id=bitrix_deal_id,
+        kit_price=kit_price,
+        delivery_price=delivery_price,
         location=location,
         order_ids=order_ids,
     )

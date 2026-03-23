@@ -191,3 +191,11 @@ class Product(BaseModel):
     modifiedBy: int | None = None
 
     model_config = {"extra": "allow", "populate_by_name": True}
+
+    def to_dict(self) -> dict[str, Any]:
+        """Full dict representation including extra fields (e.g. property* from API)."""
+        data = self.model_dump(mode="json")
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra:
+            data.update(extra)
+        return data

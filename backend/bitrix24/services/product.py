@@ -30,15 +30,9 @@ class ProductService:
         return int(result.get("element").get("id"))
 
     async def get(self, id: int) -> Product:
-        """Get a product by ID."""
+        """Get a product by ID (includes property* keys in model extra)."""
         result = await self._client.call("catalog.product.get", {"id": id})
         return Product.model_validate(result.get("product"))
-
-    async def get_raw(self, id: int) -> dict[str, Any]:
-        """Get raw product dict by ID (includes property* keys with value/valueId)."""
-        result = await self._client.call("catalog.product.get", {"id": id})
-        product = result.get("product")
-        return product if isinstance(product, dict) else {}
 
     async def list(
         self,

@@ -125,7 +125,6 @@ async def get_all_services(request: Request = None) -> List[Dict[str, Any]]:
     """Get all available manufacturing services from calculator service"""
     response = await proxy_get_request("all_services", request=request)
     if isinstance(response, dict) and "all_services" in response:
-        print(response["all_services"])
         return {"services": response["all_services"]}
     return response
 

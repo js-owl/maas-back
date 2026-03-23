@@ -58,6 +58,8 @@ coverage.xml
 # Database
 # Track only the demo DB; ignore other DB artifacts
 data/**
+postgres-data/
+postgres-data-dev/
 !shop.db
 !data/shop.db
 *.db-journal

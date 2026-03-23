@@ -3,182 +3,173 @@ from sqlalchemy import Float
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 
+from backend.core.config import DEFAULT_LOCATION
+
 Base = declarative_base()
+
+
+def utcnow() -> datetime:
+    """Return current UTC time as a naive datetime (no tzinfo).
+
+    PostgreSQL TIMESTAMP WITHOUT TIME ZONE columns require naive datetimes.
+    asyncpg raises DataError when timezone-aware datetimes are passed to such columns.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(Base):
     __tablename__ = 'users'
     id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True)
-    hashed_password = Column(String)
-    is_admin = Column(Boolean, default=False)
-    must_change_password = Column(Boolean, default=False)
-    # User type: individual or legal
-    user_type = Column(String, default="individual")  # "individual" or "legal"
-    # Bitrix integration: linked Contact ID
+    # --- columns (alphabetical) ---
     bitrix_contact_id = Column(Integer, nullable=True)
-    # Optional profile fields
-    email = Column(String, nullable=True)
-    full_name = Column(String, nullable=True)
+    building = Column(String, nullable=True)
     city = Column(String, nullable=True)
     company = Column(String, nullable=True)
-    phone_number = Column(String, nullable=True)
-    personal_phone_number = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    email = Column(String, nullable=True)
+    full_name = Column(String, nullable=True)
+    hashed_password = Column(String)
+    is_admin = Column(Boolean, default=False)
+    location = Column(Text, default=DEFAULT_LOCATION)
+    must_change_password = Column(Boolean, default=False)
+    payment_account = Column(String, nullable=True)
+    payment_bank_name = Column(String, nullable=True)
+    payment_bik = Column(String, nullable=True)
     payment_card_number = Column(String, nullable=True)
-    # Additional fields for legal entities
-    building = Column(String, nullable=True)
-    region = Column(String, nullable=True)
-    street = Column(String, nullable=True)
-    postal = Column(String, nullable=True)
-    # Payment fields for legal entities
     payment_company_name = Column(String, nullable=True)
+    payment_cor_account = Column(String, nullable=True)
     payment_inn = Column(String, nullable=True)
     payment_kpp = Column(String, nullable=True)
-    payment_bik = Column(String, nullable=True)
-    payment_bank_name = Column(String, nullable=True)
-    payment_account = Column(String, nullable=True)
-    payment_cor_account = Column(String, nullable=True)
-    # Timestamps
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    location = Column(Text, nullable=True)
-    orders = relationship('Order', back_populates='user')
-    files = relationship('FileStorage', back_populates='user')
+    personal_phone_number = Column(String, nullable=True)
+    phone_number = Column(String, nullable=True)
+    postal = Column(String, nullable=True)
+    region = Column(String, nullable=True)
+    street = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    # "individual" or "legal"
+    user_type = Column(String, default="individual")
+    username = Column(String, unique=True, index=True)
+    # --- relationships ---
     documents = relationship('DocumentStorage', back_populates='user')
+    files = relationship('FileStorage', back_populates='user')
+    orders = relationship('Order', back_populates='user')
 
-# Removed ManufacturingService model - now using calculator services directly
 
 class FileStorage(Base):
     __tablename__ = 'files'
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, unique=True, index=True)
-    original_filename = Column(String)
+    # --- columns (alphabetical) ---
+    file_metadata = Column(String, nullable=True)
     file_path = Column(String)
     file_size = Column(Integer)
     file_type = Column(String)
-    uploaded_by = Column(Integer, ForeignKey('users.id'))
-    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    file_metadata = Column(String, nullable=True)  # JSON object with extracted metadata
-    # Demo/sample flag for anonymous calculations
+    filename = Column(String, unique=True, index=True)
     is_demo = Column(Boolean, default=False)
-    # Preview image fields
-    preview_filename = Column(String, nullable=True)  # e.g., "uuid_preview.png"
-    preview_path = Column(String, nullable=True)      # Full path to preview image
-    preview_generated = Column(Boolean, default=False)  # Generation status
-    preview_generation_error = Column(String, nullable=True)  # Error message if failed
-    user = relationship('User', back_populates='files')
+    original_filename = Column(String)
+    preview_filename = Column(String, nullable=True)
+    preview_generated = Column(Boolean, default=False)
+    preview_generation_error = Column(String, nullable=True)
+    preview_path = Column(String, nullable=True)
+    uploaded_at = Column(DateTime, default=utcnow)
+    uploaded_by = Column(Integer, ForeignKey('users.id'))
+    # --- relationships ---
     orders = relationship('Order', back_populates='file')
+    user = relationship('User', back_populates='files')
+
 
 class DocumentStorage(Base):
     __tablename__ = 'documents'
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, unique=True, index=True)
-    original_filename = Column(String)
+    # --- columns (alphabetical) ---
+    document_category = Column(String, nullable=True)
+    file_metadata = Column(String, nullable=True)
     file_path = Column(String)
     file_size = Column(Integer)
     file_type = Column(String)
-    document_category = Column(String, nullable=True)  # e.g., "drawing", "specification", "manual"
+    filename = Column(String, unique=True, index=True)
+    original_filename = Column(String)
+    uploaded_at = Column(DateTime, default=utcnow)
     uploaded_by = Column(Integer, ForeignKey('users.id'))
-    uploaded_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    file_metadata = Column(String, nullable=True)  # JSON object with extracted metadata
+    # --- relationships ---
     user = relationship('User', back_populates='documents')
+
 
 class InvoiceStorage(Base):
     __tablename__ = 'invoices'
     id = Column(Integer, primary_key=True, index=True)
-    filename = Column(String, unique=True, index=True)
-    original_filename = Column(String)
+    # --- columns (alphabetical) ---
+    bitrix_document_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
     file_path = Column(String)
     file_size = Column(Integer)
     file_type = Column(String)
+    filename = Column(String, unique=True, index=True)
+    generated_at = Column(DateTime, nullable=True)
     order_id = Column(Integer, ForeignKey('orders.order_id'), nullable=False, index=True)
-    bitrix_document_id = Column(Integer, nullable=True)  # Bitrix document generator document ID
-    generated_at = Column(DateTime, nullable=True)  # When invoice was generated in Bitrix
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    original_filename = Column(String)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    # --- relationships ---
     order = relationship('Order', back_populates='invoices')
+
 
 class Order(Base):
     __tablename__ = 'orders'
     order_id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'))
-    service_id = Column(String)  # Calculator service ID (e.g., "cnc_lathe", "cnc_milling")
-    file_id = Column(Integer, ForeignKey('files.id'))
-    kit_id = Column(Integer, ForeignKey("kits.kit_id"), nullable=True, index=True)
-    order_name = Column(String, nullable=True)  # Order name
-    order_code = Column(String, nullable=True)
-    quantity = Column(Integer, default=1)
-    dimensions = Column(String, nullable=True)  # JSON: {"length": 100, "width": 50, "height": 25} - deprecated, use length/width/height
-    # New normalized dimension fields for easier querying and calculations
-    length = Column(Integer, nullable=True)
-    width = Column(Integer, nullable=True)
-    height = Column(Integer, nullable=True)
-    thickness = Column(Integer, nullable=True)
-    dia = Column(Integer, nullable=True)
-    n_dimensions = Column(Integer, default=1)  # Number of dimensions provided
-    # Additional field for Composite Rig
-    composite_rig = Column(String, nullable=True)
-    material_id = Column(String, default="alum_D16")  # Material ID from calculator service
-    material_form = Column(String, default="rod")      # Material form
-    special_instructions = Column(Text)
-    status = Column(String, default="NEW")  # Bitrix stage names: NEW, PREPARATION, PREPAYMENT_INVOICE, EXECUTING, FINAL_INVOICE, WON, LOSE, APOLOGY
-    # Calculation coefficients
-    k_otk = Column(String, default="1")  # OTK (quality control) coefficient, default "1"
-    k_cert = Column(JSON, default=["a", "f"])  # Certification types
-    # New identifiers replacing k_* across API/DB
-    tolerance_id = Column(String, default="1")
-    finish_id = Column(String, default="1")
+    # --- columns (alphabetical) ---
+    calculation_time = Column(Float, nullable=True)
+    calculation_type = Column(String, nullable=True)
     cover_id = Column(JSON, default=["1"])
-    # Results from external calculator (second backend)
-    mat_volume = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
     detail_price = Column(Float, nullable=True)
-    detail_price_one = Column(Float, nullable=True)  # Price per item without scale discounts
-    total_price = Column(Float, nullable=True)
-    mat_weight = Column(Float, nullable=True)
-    mat_price = Column(Float, nullable=True)
-    work_price = Column(Float, nullable=True)
-    k_quantity = Column(Float, nullable=True)
+    detail_price_one = Column(Float, nullable=True)
     detail_time = Column(Float, nullable=True)
-    k_complexity = Column(Float, nullable=True)  # Complexity coefficient from calculator service
+    document_ids = Column(Text, nullable=True)
+    file_id = Column(Integer, ForeignKey('files.id'))
+    finish_id = Column(String, default="1")
+    height = Column(Integer, nullable=True)
+    invoice_generated_at = Column(DateTime, nullable=True)
+    invoice_ids = Column(Text, nullable=True) # JSON: [26, 27, 28] — list of invoice IDs from invoices table
+    k_cert = Column(JSON, default=["a", "f"])
+    k_otk = Column(String, default="1.0")
+    k_quantity = Column(Float, nullable=True)
+    kit_id = Column(Integer, ForeignKey("kits.kit_id"), nullable=True, index=True)
+    length = Column(Integer, nullable=True)
+    manufacturing_cycle = Column(Float, nullable=True)
+    mat_price = Column(Float, nullable=True)
+    mat_volume = Column(Float, nullable=True)
+    mat_weight = Column(Float, nullable=True)
+    material_form = Column(String, nullable=True)
+    material_id = Column(String, nullable=True)
+    ml_model = Column(String, nullable=True) # TODO
+    order_code = Column(String, nullable=True)
+    order_name = Column(String, nullable=True)
+    quantity = Column(Integer, default=1)
+    service_id = Column(String)
+    special_instructions = Column(Text) # TODO
+    status = Column(String, default="NEW") # Bitrix stage names
+    suitable_machines = Column(Text, nullable=True) # JSON: [] — list of suitable machines
+    tolerance_id = Column(String, default="1")
+    total_calculation_time = Column(Float, nullable=True)
+    total_price = Column(Float, nullable=True)
+    total_price_breakdown = Column(Text, nullable=True) # JSON 
     total_time = Column(Float, nullable=True)
-    k_p = Column(Float, nullable=True)
-    manufacturing_cycle = Column(Float, nullable=True)  # Manufacturing cycle from calculator service
-    suitable_machines = Column(Text, nullable=True)  # JSON array of suitable manufacturing machines
-    total_price_breakdown = Column(Text, nullable=True)  # JSON array of suitable manufacturing machines
-    # Calculation type information
-    calculation_type = Column(String, nullable=True)  # "ml_based", "rule_based", or "unknown"
-    ml_model = Column(String, nullable=True)  # ML model name if available
-    ml_confidence = Column(Float, nullable=True)  # ML confidence score if available
-    # Calculation performance tracking
-    calculation_time = Column(Float, nullable=True)  # Calculator service call duration only
-    total_calculation_time = Column(Float, nullable=True)  # Total backend processing time
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    # Bitrix integration: linked Deal ID
-    bitrix_deal_id = Column(Integer, nullable=True)
-    # Invoice fields (DEPRECATED: Use invoice_ids column instead, kept for backward compatibility)
-    invoice_url = Column(String, nullable=True)  # Bitrix download URL (deprecated)
-    invoice_file_path = Column(String, nullable=True)  # Local copy path (deprecated)
-    invoice_generated_at = Column(DateTime, nullable=True)  # When invoice was generated (deprecated)
-    # User-uploaded technical documents attached to the order (JSON array of document IDs)
-    # These are technical documents like drawings, specifications, etc. that support the main 3D model
-    document_ids = Column(Text, nullable=True)  # JSON: [1, 2, 3] - list of user-uploaded document IDs
-    # Bitrix-generated invoices attached to the order (JSON array of invoice IDs)
-    # Invoices are generated by Bitrix and can be multiple (manager may make changes during deal processing)
-    invoice_ids = Column(Text, nullable=True)  # JSON: [26, 27, 28] - list of invoice IDs (from invoices table)
-    location = Column(Text, nullable=True) # DEPRECATED
-    user = relationship('User', back_populates='orders')
-    # Removed service relationship - now using calculator service IDs directly
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    width = Column(Integer, nullable=True)
+    work_price = Column(Float, nullable=True)
+    # --- relationships ---
     file = relationship('FileStorage', back_populates='orders')
     invoices = relationship('InvoiceStorage', back_populates='order')
     kit = relationship("Kit", back_populates="orders")
-    
+    user = relationship('User', back_populates='orders')
+
     @property
     def compute_front_status(self):
         """Compute stage names for front (without id from Bitrix)"""
         if not self.front_status:
             try:
                 self.front_status = self.status.split(":")[1]
-            except:
+            except Exception:
                 self.front_status = self.status
             return self
 
@@ -186,192 +177,184 @@ class Order(Base):
 class CallRequest(Base):
     __tablename__ = 'call_requests'
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)  # Optional user ID
+    # --- columns (alphabetical) ---
+    additional = Column(Text, nullable=True)
+    agreement = Column(Boolean, default=True)
+    bitrix_contact_id = Column(Integer, nullable=True)
+    bitrix_lead_id = Column(Integer, nullable=True)
+    bitrix_synced_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
     name = Column(String, nullable=False)
     phone = Column(String, nullable=False)
     product = Column(String, nullable=False)
+    status = Column(String, default="new")
     time = Column(String, nullable=False)
-    additional = Column(Text, nullable=True)
-    agreement = Column(Boolean, default=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
-    # Bitrix integration fields
-    bitrix_lead_id = Column(Integer, nullable=True)  # Bitrix lead ID if created
-    bitrix_contact_id = Column(Integer, nullable=True)  # Bitrix contact ID if created
-    bitrix_synced_at = Column(DateTime, nullable=True)  # When last synced to Bitrix
-    status = Column(String, default="new")  # new, contacted, completed, cancelled
-
-
-class BitrixSyncQueue(Base):
-    """Queue for Bitrix synchronization operations"""
-    __tablename__ = 'bitrix_sync_queue'
-    
-    id = Column(Integer, primary_key=True, index=True)
-    entity_type = Column(String, nullable=False)  # 'deal', 'contact', 'lead'
-    entity_id = Column(Integer, nullable=False)  # order_id, user_id, or call_request_id
-    operation = Column(String, nullable=False)  # 'create', 'update'
-    payload = Column(JSON, nullable=False)  # Data to sync
-    status = Column(String, default="pending")  # pending, processing, completed, failed
-    attempts = Column(Integer, default=0)  # Retry counter
-    last_attempt = Column(DateTime, nullable=True)  # Last attempt timestamp
-    error_message = Column(Text, nullable=True)  # Last error message
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True)
 
 
 class Kit(Base):
     __tablename__ = "kits"
-
     kit_id = Column(Integer, primary_key=True, index=True)
-    order_ids = Column(Text, nullable=False, default="[]")  # JSON: [1, 2, 3] - list of order IDs
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # --- columns (alphabetical) ---
+    created_at = Column(DateTime, default=utcnow)
+    delivery_price = Column(Float, nullable=True, default=0.0)
     kit_name = Column(String, nullable=True)
-    quantity = Column(Integer, default=1)
     kit_price = Column(Float, nullable=True, default=0.0)
-
-    delivery_price = Column(Float, nullable=True, default=0.0) # placeholder
-
-    status = Column(String, default="NEW")
-
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                        onupdate=lambda: datetime.now(timezone.utc))
-    bitrix_deal_id = Column(Integer, nullable=True) # Placeholder
     location = Column(Text, nullable=True)
-
-    user = relationship("User", backref="kits")
+    manufacturing_cycle = Column(Text, nullable=True) # TODO
+    order_ids = Column(Text, nullable=False, default="[]") # JSON: [1, 2, 3] — list of order IDs
+    quantity = Column(Integer, default=1)
+    status = Column(String, default="NEW")
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # --- relationships ---
     orders = relationship("Order", back_populates="kit")
+    user = relationship("User", backref="kits")
 
 
 class MaasBitrixIdsMapping(Base):
     """Mapping table for MaaS and Bitrix entity IDs"""
     __tablename__ = 'maas_bitrix_ids_mapping'
-    
     id = Column(Integer, primary_key=True, index=True)
-    maas_id = Column(Integer, nullable=False, index=True)
+    # --- columns (alphabetical) ---
     bitrix_id = Column(Integer, nullable=False, index=True)
-    entity_type = Column(String(32), nullable=False, index=True)  # 'deal', 'contact', 'category', 'userfield_enum', etc.
-    buffer = Column(JSON, nullable=True)  # Flexible JSON storage for additional data
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # Flexible JSON storage for additional data
+    buffer = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    # 'deal', 'contact', 'category', 'userfield_enum', etc.
+    entity_type = Column(String(32), nullable=False, index=True)
+    maas_id = Column(Integer, nullable=False, index=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
-# --- Bitrix24 constant-entity source-of-truth tables (no bitrix_id on tables; use maas_bitrix_ids_mapping) ---
+# --- Bitrix24 constant-entity source-of-truth tables ---
+# (no bitrix_id on these tables; use maas_bitrix_ids_mapping)
 
 class BitrixCategory(Base):
-    """Local source of truth for Bitrix24 categories (sales funnels). Columns align with backend.bitrix24.dto.category."""
+    """Local source of truth for Bitrix24 categories (sales funnels)."""
     __tablename__ = 'bitrix_category'
     id = Column(Integer, primary_key=True, index=True)
-    entity_type_id = Column(Integer, nullable=False)  # entityTypeId
+    # --- columns (alphabetical) ---
+    created_at = Column(DateTime, default=utcnow)
+    entity_type_id = Column(Integer, nullable=False)
+    is_default = Column(Integer, nullable=True)
     name = Column(String, nullable=True)
-    sort = Column(Integer, nullable=True)
-    is_default = Column(Integer, nullable=True)  # SQLite: 0/1
     origin_id = Column(String, nullable=True)
     originator_id = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    sort = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class BitrixStatus(Base):
-    """Local source of truth for Bitrix24 statuses. Columns align with backend.bitrix24.dto.status."""
+    """Local source of truth for Bitrix24 statuses."""
     __tablename__ = 'bitrix_status'
     id = Column(Integer, primary_key=True, index=True)
-    entity_id = Column(String, nullable=True)   # ENTITY_ID
-    status_id = Column(String, nullable=True)   # STATUS_ID
-    name = Column(String, nullable=True)        # NAME
+    # --- columns (alphabetical) ---
     category_id = Column(Integer, nullable=True)
+    color = Column(String, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    entity_id = Column(String, nullable=True)
+    extra = Column(JSON, nullable=True)
+    name = Column(String, nullable=True)
+    name_init = Column(String, nullable=True)
     semantics = Column(String, nullable=True)
     sort = Column(Integer, nullable=True)
-    color = Column(String, nullable=True)
-    extra = Column(JSON, nullable=True)
-    name_init = Column(String, nullable=True)
+    status_id = Column(String, nullable=True)
     system = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class BitrixUserfield(Base):
-    """Local source of truth for Bitrix24 userfields. Columns align with backend.bitrix24.dto.userfield. LIST stored in bitrix_userfield_enum."""
+    """Local source of truth for Bitrix24 userfields. LIST stored in bitrix_userfield_enum."""
     __tablename__ = 'bitrix_userfield'
     id = Column(Integer, primary_key=True, index=True)
-    entity_id = Column(String, nullable=True)   # ENTITY_ID
-    field_name = Column(String, nullable=True) # FIELD_NAME
-    user_type_id = Column(String, nullable=True)
-    xml_id = Column(String, nullable=True)
-    sort = Column(Integer, nullable=True)
-    multiple = Column(String, nullable=True)
-    mandatory = Column(String, nullable=True)
-    show_filter = Column(String, nullable=True)
-    show_in_list = Column(String, nullable=True)
+    # --- columns (alphabetical) ---
+    created_at = Column(DateTime, default=utcnow)
+    edit_form_label = Column(String, nullable=True)
     edit_in_list = Column(String, nullable=True)
+    entity_id = Column(String, nullable=True)
+    error_message = Column(String, nullable=True)
+    field_name = Column(String, nullable=True)
+    help_message = Column(String, nullable=True)
     is_searchable = Column(String, nullable=True)
     label = Column(String, nullable=True)
-    edit_form_label = Column(String, nullable=True)
     list_column_label = Column(String, nullable=True)
     list_filter_label = Column(String, nullable=True)
-    error_message = Column(String, nullable=True)
-    help_message = Column(String, nullable=True)
+    mandatory = Column(String, nullable=True)
+    multiple = Column(String, nullable=True)
     settings = Column(JSON, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    show_filter = Column(String, nullable=True)
+    show_in_list = Column(String, nullable=True)
+    sort = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    user_type_id = Column(String, nullable=True)
+    xml_id = Column(String, nullable=True)
+    # --- relationships ---
     enumerations = relationship('BitrixUserfieldEnum', back_populates='userfield')
 
 
 class BitrixUserfieldEnum(Base):
-    """List items for list-type userfields. FK to bitrix_userfield. Bitrix ID stored in maas_bitrix_ids_mapping (entity_type=userfield_enum)."""
+    """List items for list-type userfields. FK to bitrix_userfield."""
     __tablename__ = 'bitrix_userfield_enum'
     id = Column(Integer, primary_key=True, index=True)
-    userfield_id = Column(Integer, ForeignKey('bitrix_userfield.id', ondelete='CASCADE'), nullable=False, index=True)
+    # --- columns (alphabetical) ---
+    created_at = Column(DateTime, default=utcnow)
+    def_ = Column(String, nullable=True)
     sort = Column(Integer, nullable=True)
-    value = Column(String, nullable=True)   # VALUE
-    def_ = Column(String, nullable=True)    # DEF (Y/N)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    userfield_id = Column(Integer, ForeignKey('bitrix_userfield.id', ondelete='CASCADE'), nullable=False, index=True)
+    value = Column(String, nullable=True)
     xml_id = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # --- relationships ---
     userfield = relationship('BitrixUserfield', back_populates='enumerations')
 
 
 class BitrixProductProperty(Base):
-    """Local source of truth for Bitrix24 product properties. Columns align with backend.bitrix24.dto.product_property."""
+    """Local source of truth for Bitrix24 product properties."""
     __tablename__ = 'bitrix_product_property'
     id = Column(Integer, primary_key=True, index=True)
-    iblock_id = Column(Integer, nullable=True)
-    name = Column(String, nullable=True)
-    property_type = Column(String, nullable=True)
-    code = Column(String, nullable=True)
-    xml_id = Column(String, nullable=True)
+    # --- columns (alphabetical) ---
     active = Column(String, nullable=True)
-    sort = Column(Integer, nullable=True)
+    code = Column(String, nullable=True)
+    col_count = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    default_value = Column(String, nullable=True)
+    file_type = Column(String, nullable=True)
+    filtrable = Column(String, nullable=True)
+    hint = Column(String, nullable=True)
+    iblock_id = Column(Integer, nullable=True)
     is_required = Column(String, nullable=True)
+    link_iblock_id = Column(Integer, nullable=True)
+    list_type = Column(String, nullable=True)
     multiple = Column(String, nullable=True)
     multiple_cnt = Column(Integer, nullable=True)
-    with_description = Column(String, nullable=True)
-    hint = Column(String, nullable=True)
+    name = Column(String, nullable=True)
+    property_type = Column(String, nullable=True)
     row_count = Column(Integer, nullable=True)
-    col_count = Column(Integer, nullable=True)
     searchable = Column(String, nullable=True)
-    filtrable = Column(String, nullable=True)
-    default_value = Column(String, nullable=True)
-    list_type = Column(String, nullable=True)
-    link_iblock_id = Column(Integer, nullable=True)
-    file_type = Column(String, nullable=True)
+    sort = Column(Integer, nullable=True)
+    timestamp_x = Column(String, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     user_type = Column(String, nullable=True)
     user_type_settings = Column(JSON, nullable=True)
-    timestamp_x = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    with_description = Column(String, nullable=True)
+    xml_id = Column(String, nullable=True)
+    # --- relationships ---
     enums = relationship('BitrixProductPropertyEnum', back_populates='property')
 
 
 class BitrixProductPropertyEnum(Base):
-    """Local source of truth for Bitrix24 product property enum values. Columns align with backend.bitrix24.dto.product_property_enum."""
+    """List items for list-type product properties."""
     __tablename__ = 'bitrix_product_property_enum'
     id = Column(Integer, primary_key=True, index=True)
+    # --- columns (alphabetical) ---
+    created_at = Column(DateTime, default=utcnow)
+    def_ = Column(String, nullable=True)
     property_id = Column(Integer, ForeignKey('bitrix_product_property.id', ondelete='CASCADE'), nullable=False, index=True)
+    sort = Column(Integer, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     value = Column(String, nullable=True)
     xml_id = Column(String, nullable=True)
-    def_ = Column(String, nullable=True)  # def (Y/N)
-    sort = Column(Integer, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+    # --- relationships ---
     property = relationship('BitrixProductProperty', back_populates='enums')

@@ -23,14 +23,11 @@ async def call_calculator_service(
     length: Optional[int],
     width: Optional[int],
     height: Optional[int],
-    n_dimensions: int,
-    dia: Optional[int] = None,
     tolerance_id: str = "1",
     finish_id: str = "1",
     cover_id: List[str] = ["1"],
-    k_otk: str = "1",
+    k_otk: str = "1.0",
     k_cert: List[str] = None,
-    k_complexity: float = 1.0,
     timeout: float = 15.0,
     forward_headers: Optional[dict] = None,
     file_data: Optional[str] = None,
@@ -63,17 +60,15 @@ async def call_calculator_service(
             "cover_id": cover_id,
             "k_otk": k_otk,
             "k_cert": k_cert,
-            "n_dimensions": n_dimensions,
-            "k_complexity": k_complexity,
             "location": location
         }
         
         # Add dimensions only if provided (not None)
-        if length is not None or width is not None or (height is not None or dia is not None):
+        if length is not None or width is not None or (height is not None):
             post_data["dimensions"] = {
                 "length": length,
                 "width": width,
-                "thickness": height or dia  # Use height for milling, dia for lathe
+                "height": height
             }
         
         # Add file data if provided

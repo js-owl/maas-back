@@ -25,11 +25,15 @@ from backend.core.config import (
 from backend.core.redis import init_redis, close_redis
 from backend.bitrix24.async_queue.process import (
     start_executor_process,
+    start_reverse_sync_process,
     stop_executor_process,
+    stop_reverse_sync_process,
 )
 from backend.bitrix24.client import BitrixClient
 from backend.bitrix24.startup_sync import run_constant_entity_startup_sync
+from backend.bitrix24.funnel_cache import sync_deal_funnels
 from backend.bitrix24.seed_constant_entities import seed_constant_entity_initial_data
+from backend.bitrix24.sync_payload.external_lists import fetch_list_values
 from backend.core.middleware import https_redirect_middleware
 from backend.core.dependencies import get_db
 from backend.core.exceptions import BaseAPIException
@@ -42,17 +46,16 @@ from backend.core.error_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from backend.database import (
-    seed_admin, ensure_order_new_columns, ensure_invoices_table, 
-    ensure_kits_table, ensure_users_new_columns,
-    ensure_users_location_column, backfill_users_location_from_kits,
-    _env_json_dict, apply_admin_location_overrides, 
-    ensure_maas_bitrix_ids_mapping_table, ensure_constant_entity_tables,
+    seed_admin, ensure_schema,
+    force_users_location_null,
+    _env_json_dict, apply_admin_location_overrides,
     AsyncSessionLocal
 )
 from sqlalchemy import select, func
 from fastapi import Request
 from backend.utils.logging import get_logger
 import time
+import json
 
 logger = get_logger(__name__)
 
@@ -157,7 +160,7 @@ from backend.calculations.router import router as calculations_router
 from backend.orders.router import router as orders_router
 from backend.call_requests.router import router as call_requests_router
 from backend.kits.router import router as kits_router
-from backend.kits.router import router as kits_router
+from backend.basket.router import router as basket_router
 
 # Register routers
 app.include_router(auth_router)
@@ -169,6 +172,7 @@ app.include_router(calculations_router)
 app.include_router(orders_router)
 app.include_router(call_requests_router)
 app.include_router(kits_router)
+app.include_router(basket_router)
 
 # Root endpoints
 @app.get("/", tags=["Root"])
@@ -431,24 +435,21 @@ async def startup_event():
     """Initialize application on startup"""
     logger.info(f"Starting {APP_TITLE} v{APP_VERSION}")
     
-    # Run database migrations
-    await ensure_order_new_columns()
-    await ensure_invoices_table()
-    await ensure_kits_table()
-    await ensure_users_new_columns()
-    # --- location migration to users ---
-    await ensure_users_location_column()
-    await backfill_users_location_from_kits()
+    # Ensure all tables and columns exist (PostgreSQL-compatible, idempotent)
+    await ensure_schema()
     overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
     await apply_admin_location_overrides(overrides)
-    # bitrix_table
-    await ensure_maas_bitrix_ids_mapping_table()
-    await ensure_constant_entity_tables()
+    await force_users_location_null()
 
     # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
     try:
+        _list_values = await fetch_list_values()
+    except Exception as e:
+        logger.warning("Failed to fetch external list values for seed (will use static fallbacks): %s", e)
+        _list_values = None
+    try:
         async with AsyncSessionLocal() as db:
-            await seed_constant_entity_initial_data(db, BITRIX_PRODUCT_IBLOCK_ID)
+            await seed_constant_entity_initial_data(db, BITRIX_PRODUCT_IBLOCK_ID, list_values=_list_values)
     except Exception as e:
         logger.warning("Constant-entity initial data seed failed (non-fatal): %s", e)
 
@@ -463,6 +464,8 @@ async def startup_event():
             )
             async with AsyncSessionLocal() as db:
                 await run_constant_entity_startup_sync(db, client)
+                # Pull current deal funnels (pipelines) and their stages for local cache
+                await sync_deal_funnels(db, client)
         except Exception as e:
             logger.warning("Constant-entity startup sync failed (non-fatal): %s", e)
 
@@ -477,13 +480,17 @@ async def startup_event():
 
     # Start Bitrix24 executor process
     start_executor_process(app)
-    
+
+    # Start Bitrix24 reverse sync process (Bitrix24 → MaaS) when enabled
+    start_reverse_sync_process(app)
+
     logger.info("Application startup complete")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Gracefully shutdown application resources."""
+    stop_reverse_sync_process(app)
     stop_executor_process(app)
     await close_redis(app)
 

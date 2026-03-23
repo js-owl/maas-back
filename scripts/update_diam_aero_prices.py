@@ -24,7 +24,7 @@ from backend.utils.logging import get_logger
 logger = get_logger(__name__)
 
 # Database configuration
-DATABASE_URL = "sqlite+aiosqlite:///./data/shop.db"
+DATABASE_URL = "postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend"
 engine = create_async_engine(DATABASE_URL, echo=False)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

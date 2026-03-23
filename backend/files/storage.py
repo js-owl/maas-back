@@ -82,7 +82,7 @@ class FileStorageService:
                 "file_size": metadata["file_size"],
                 "file_type": file_extension,
                 "uploaded_by": user_id,
-                "uploaded_at": datetime.now(timezone.utc),
+                "uploaded_at": datetime.now(timezone.utc).replace(tzinfo=None),
                 "is_demo": False  # Regular uploads are not demo files
             }
             

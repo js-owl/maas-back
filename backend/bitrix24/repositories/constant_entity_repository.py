@@ -302,3 +302,133 @@ async def product_property_enum_get_bitrix_id(db: AsyncSession, maas_id: int) ->
 
 async def product_property_enum_set_bitrix_id(db: AsyncSession, maas_id: int, bitrix_id: int, buffer: Optional[Dict[str, Any]] = None) -> None:
     await upsert_mapping(db, maas_id, bitrix_id, ENTITY_TYPE_PRODUCT_PROPERTY_ENUM, buffer)
+
+
+# ---------------------------------------------------------------------------
+# Extra helpers for funnel (category) and stage (status) caching
+# ---------------------------------------------------------------------------
+
+async def category_get_by_name(db: AsyncSession, *, entity_type_id: int, name: str) -> Optional[BitrixCategory]:
+    """Find local BitrixCategory row by entity_type_id + name."""
+    if not name:
+        return None
+    result = await db.execute(
+        select(BitrixCategory).where(
+            BitrixCategory.entity_type_id == entity_type_id,
+            BitrixCategory.name == name,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def status_get_by_keys(db: AsyncSession, *, entity_id: str, status_id: str) -> Optional[BitrixStatus]:
+    """Find local BitrixStatus row by ENTITY_ID + STATUS_ID."""
+    if not entity_id or not status_id:
+        return None
+    result = await db.execute(
+        select(BitrixStatus).where(
+            BitrixStatus.entity_id == entity_id,
+            BitrixStatus.status_id == status_id,
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def category_upsert_from_bitrix(
+    db: AsyncSession,
+    *,
+    entity_type_id: int,
+    name: str,
+    sort: Optional[int] = None,
+    origin_id: Optional[str] = None,
+    originator_id: Optional[str] = None,
+    bitrix_id: int,
+    buffer: Optional[Dict[str, Any]] = None,
+) -> BitrixCategory:
+    """Upsert a BitrixCategory row by name + entity_type_id and store mapping to Bitrix ID."""
+    row = await category_get_by_name(db, entity_type_id=entity_type_id, name=name)
+    if row is None:
+        row = await category_create(
+            db,
+            entity_type_id=entity_type_id,
+            name=name,
+            sort=sort,
+            origin_id=origin_id,
+            originator_id=originator_id,
+        )
+    else:
+        changed = False
+        if sort is not None and row.sort != sort:
+            row.sort = sort
+            changed = True
+        if origin_id is not None and row.origin_id != origin_id:
+            row.origin_id = origin_id
+            changed = True
+        if originator_id is not None and row.originator_id != originator_id:
+            row.originator_id = originator_id
+            changed = True
+        if changed:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+
+    await category_set_bitrix_id(db, row.id, int(bitrix_id), buffer=buffer)
+    return row
+
+
+async def status_upsert_from_bitrix(
+    db: AsyncSession,
+    *,
+    entity_id: str,
+    status_id: str,
+    name: str,
+    category_id: Optional[int] = None,
+    semantics: Optional[str] = None,
+    sort: Optional[int] = None,
+    color: Optional[str] = None,
+    extra: Optional[Dict[str, Any]] = None,
+    bitrix_list_id: Optional[int] = None,
+    buffer: Optional[Dict[str, Any]] = None,
+) -> BitrixStatus:
+    """Upsert a BitrixStatus row by ENTITY_ID + STATUS_ID and store mapping to Bitrix list item ID (ID)."""
+    row = await status_get_by_keys(db, entity_id=entity_id, status_id=status_id)
+    if row is None:
+        row = await status_create(
+            db,
+            entity_id=entity_id,
+            status_id=status_id,
+            name=name,
+            category_id=category_id,
+            semantics=semantics,
+            sort=sort,
+            color=color,
+            extra=extra,
+        )
+    else:
+        changed = False
+        if name is not None and row.name != name:
+            row.name = name
+            changed = True
+        if category_id is not None and row.category_id != category_id:
+            row.category_id = category_id
+            changed = True
+        if semantics is not None and row.semantics != semantics:
+            row.semantics = semantics
+            changed = True
+        if sort is not None and row.sort != sort:
+            row.sort = sort
+            changed = True
+        if color is not None and row.color != color:
+            row.color = color
+            changed = True
+        if extra is not None and row.extra != extra:
+            row.extra = extra
+            changed = True
+        if changed:
+            db.add(row)
+            await db.commit()
+            await db.refresh(row)
+
+    if bitrix_list_id is not None:
+        await status_set_bitrix_id(db, row.id, int(bitrix_list_id), buffer=buffer)
+    return row

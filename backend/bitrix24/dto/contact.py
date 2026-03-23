@@ -1,5 +1,7 @@
 """Contact DTOs for crm.contact.* methods."""
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -194,3 +196,11 @@ class Contact(BaseModel):
     LINK: list[dict] | None = None
 
     model_config = {"extra": "allow", "populate_by_name": True}
+
+    def to_dict(self) -> dict[str, Any]:
+        """Full dict representation including extra fields from API."""
+        data = self.model_dump(mode="json")
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra:
+            data.update(extra)
+        return data

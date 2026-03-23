@@ -102,7 +102,7 @@ class DocumentStorageService:
                 "file_type": metadata.get("file_type", ""),
                 "uploaded_by": user_id,
                 "document_category": category,
-                "uploaded_at": datetime.now(timezone.utc)
+                "uploaded_at": datetime.now(timezone.utc).replace(tzinfo=None)
             }
             
             logger.info(f"Document saved from base64: {unique_filename} (size: {metadata['file_size']} bytes)")

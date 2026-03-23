@@ -84,9 +84,9 @@ async def create_invoice_from_file_path(
             "file_type": file_type,
             "order_id": order_id,
             "bitrix_document_id": bitrix_document_id,
-            "generated_at": generated_at or datetime.now(timezone.utc),
-            "created_at": datetime.now(timezone.utc),
-            "updated_at": datetime.now(timezone.utc)
+            "generated_at": generated_at or datetime.now(timezone.utc).replace(tzinfo=None),
+            "created_at": datetime.now(timezone.utc).replace(tzinfo=None),
+            "updated_at": datetime.now(timezone.utc).replace(tzinfo=None)
         }
         
         # Create database record

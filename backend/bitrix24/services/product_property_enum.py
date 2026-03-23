@@ -25,9 +25,9 @@ class ProductPropertyEnumService:
         result = await self._client.call("catalog.productPropertyEnum.add", {"fields": payload})
         return int(result.get("productPropertyEnum").get("id"))
 
-    async def get(self, id: int) -> ProductPropertyEnum:
-        """Get an enum value by ID."""
-        result = await self._client.call("catalog.productPropertyEnum.get", {"id": id})
+    async def get(self, entity_id: int) -> ProductPropertyEnum:
+        """Get an enum value by Bitrix ID."""
+        result = await self._client.call("catalog.productPropertyEnum.get", {"id": entity_id})
         return ProductPropertyEnum.model_validate(result.get("productPropertyEnum"))
 
     async def list(

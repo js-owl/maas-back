@@ -20,6 +20,9 @@ from backend.bitrix24.product_property_value_ids import extract_property_value_i
 from backend.bitrix24.repositories.mapping_repository import get_bitrix_id, upsert_mapping
 from backend.bitrix24.services.product import ProductService
 from backend.bitrix24.services.product_row import ProductRowService
+from backend.bitrix24.services.deal import DealService
+from backend.bitrix24.funnel_cache import get_or_create_deal_category_id, resolve_stage_id
+from backend.calculations.proxy import get_locations
 from backend.database import AsyncSessionLocal
 from backend.models import Kit, Order
 from backend.utils.logging import get_logger
@@ -46,6 +49,29 @@ def _extract_bitrix_id(result: Any) -> int | str | None:
             return result["ID"]
     if isinstance(result, (int, str)):
         return result
+    return None
+
+
+async def _resolve_location_label(location_id: Any) -> str | None:
+    """Resolve location external id to label via calculator proxy get_locations()."""
+    if location_id is None:
+        return None
+    try:
+        resp = await get_locations()
+        locations = []
+        if isinstance(resp, dict):
+            locations = resp.get("locations") or []
+        elif isinstance(resp, list):
+            locations = resp
+        key = str(location_id)
+        for item in locations:
+            if not isinstance(item, dict):
+                continue
+            if str(item.get("id")) == key:
+                # return (item.get("label") or item.get("name") or "").strip() or None
+                return item.get("label").strip() or None
+    except Exception as e:
+        logger.warning("Failed to resolve location label for %s: %s", location_id, e)
     return None
 
 
@@ -158,6 +184,46 @@ async def process_message(
             raise ValueError(f"Unsupported action: {message.action}")
 
         payload = message.payload or {}
+        # --- Deal funnel/category routing + stage name->code mapping ---
+        if message.entity_type == "deal" and message.action in {"create", "update"}:
+            async with AsyncSessionLocal() as _db:
+                # Determine CATEGORY_ID
+                category_id: int | None = None
+                if message.action == "create":
+                    if message.local_id is not None:
+                        kit = await _db.get(Kit, message.local_id)
+                        if kit is not None:
+                            loc_label = await _resolve_location_label(getattr(kit, "location", None))
+                            try:
+                                category_id = await get_or_create_deal_category_id(_db, client, category_name=loc_label)
+                                payload["CATEGORY_ID"] = category_id
+                            except Exception as e:
+                                logger.warning("Failed to resolve/create deal category for location %s: %s", loc_label, e)
+                else:
+                    # update: category is immutable; read existing deal to know its category
+                    deal_id = message.external_id
+                    if deal_id is None and message.local_id is not None:
+                        deal_id = await get_bitrix_id(_db, message.local_id, "deal")
+                    if deal_id is not None:
+                        try:
+                            deal_service = DealService(client)
+                            deal_obj = await deal_service.get(int(deal_id))
+                            data = deal_obj.to_dict()
+                            cid = data.get("CATEGORY_ID")
+                            category_id = int(cid) if cid is not None else None
+                        except Exception as e:
+                            logger.warning("Failed to read deal %s to resolve CATEGORY_ID: %s", deal_id, e)
+
+                # Translate STAGE_ID if payload carries a human-readable name
+                stage_val = payload.get("STAGE_ID")
+                if stage_val is not None and category_id is not None:
+                    try:
+                        mapped = await resolve_stage_id(_db, stage_name=str(stage_val), category_id=category_id)
+                        if mapped is not None:
+                            payload["STAGE_ID"] = mapped
+                    except Exception as e:
+                        logger.warning("Failed to map stage name '%s' to code for category %s: %s", stage_val, category_id, e)
+
         dto_map = entry.get("dto", {})
         dto_cls = dto_map.get(message.action)
         fields = dto_cls.model_validate(payload) if dto_cls else None
@@ -250,8 +316,8 @@ async def process_message(
                     product_svc = get_service_instance(
                         "product", client, payload, services_cache
                     )
-                    raw_product = await product_svc.get_raw(int(product_bitrix_id))
-                    property_buffer = extract_property_value_ids(raw_product)
+                    product = await product_svc.get(int(product_bitrix_id))
+                    property_buffer = extract_property_value_ids(product.to_dict())
                     if property_buffer:
                         async with AsyncSessionLocal() as db:
                             await upsert_mapping(

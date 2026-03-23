@@ -39,8 +39,6 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         length=order.length,
         width=order.width,
         height=order.height,
-        thickness=order.thickness,
-        dia=order.dia,
         material_id=order.material_id,
         material_form=order.material_form,
         special_instructions=order.special_instructions,
@@ -49,7 +47,6 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         cover_id=order.cover_id,
         k_otk=order.k_otk,
         k_cert=order.k_cert,
-        n_dimensions=order.n_dimensions,
         status='NEW',  # Use Bitrix stage name (NEW) instead of old status (pending)
         # Store calculation results if provided
         mat_volume=calc.get('mat_volume') if calc else None,
@@ -69,7 +66,6 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         # Calculation type information
         calculation_type=calc.get('calculation_type') if calc else None,
         ml_model=calc.get('ml_model') if calc else None,
-        ml_confidence=calc.get('ml_confidence') if calc else None,
         calculation_time=calc.get('calculation_time') if calc else None,
         total_calculation_time=calc.get('total_calculation_time') if calc else None,
         document_ids=json.dumps(order.document_ids)
@@ -114,13 +110,12 @@ async def update_order_calc_fields(db: AsyncSession, order_id: int, calc: dict) 
     # Update calculation type information
     order.calculation_type = calc.get('calculation_type')
     order.ml_model = calc.get('ml_model')
-    order.ml_confidence = calc.get('ml_confidence')
     order.calculation_time = calc.get('calculation_time')
     order.total_calculation_time = calc.get('total_calculation_time')
     extracted_dimensions = calc.get("extracted_dimensions", {})
     order.length = round(extracted_dimensions.get("length", 0), 0)
     order.width = round(extracted_dimensions.get("width", 0), 0)
-    order.height = round(extracted_dimensions.get("thickness", 0), 0)
+    order.height = round(extracted_dimensions.get("height", 0), 0)
     
     db.add(order)
     await db.commit()
@@ -183,6 +178,9 @@ async def update_order(db: AsyncSession, order_id: int, order_update: schemas.Or
                 setattr(order, field, json.dumps(value))
             else:
                 setattr(order, field, value)
+        # total_price_breakdown is stored as Text (JSON string)
+        elif field == 'total_price_breakdown' and value is not None:
+            setattr(order, field, json.dumps(value) if isinstance(value, dict) else value)
         # cover_id and k_cert are JSON columns - SQLAlchemy handles Python lists automatically
         # But ensure they're proper Python objects (lists) for JSON columns
         elif field in ('cover_id', 'k_cert') and value is not None:

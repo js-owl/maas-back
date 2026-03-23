@@ -22,7 +22,7 @@ class ContactService:
         return int(result)
 
     async def get(self, id: int) -> Contact:
-        """Get a contact by ID."""
+        """Get a contact by ID (includes extra fields in model)."""
         result = await self._client.call("crm.contact.get", {"id": id})
         return Contact.model_validate(result)
 

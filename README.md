@@ -84,7 +84,7 @@ Create a `.env` file in the project root:
 
 ```env
 # Database
-DATABASE_URL=sqlite+aiosqlite:///./data/shop.db
+DATABASE_URL=postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend
 
 # JWT Settings
 SECRET_KEY=your-secret-key-here

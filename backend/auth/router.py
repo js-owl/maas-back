@@ -9,7 +9,7 @@ from sqlalchemy import select
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
 from backend.core.redis import get_redis
-from backend.core.config import BITRIX_ENABLED
+from backend.core.config import BITRIX_ENABLED, DEFAULT_LOCATION
 from backend.bitrix24.async_queue import enqueue_operation
 from backend.bitrix24.sync_payload.contact import user_to_contact_create
 from backend.auth.service import authenticate_user, create_access_token, get_password_hash
@@ -93,7 +93,8 @@ async def register_user(
         company=user.company,
         phone_number=user.phone_number,
         personal_phone_number=user.personal_phone_number,
-        payment_card_number=user.payment_card_number
+        payment_card_number=user.payment_card_number,
+        location=DEFAULT_LOCATION or None
     )
     db.add(db_user)
     await db.commit()
