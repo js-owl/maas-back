@@ -1,4 +1,4 @@
-"""Userfield service for crm.{entity}.userfield.*. Scoped by entity: deal, lead, contact."""
+"""Userfield service for crm.{entity}.userfield.*. Scoped by entity: deal, lead, contact, company."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ from backend.bitrix24.client import BitrixClient
 from backend.bitrix24.dto import dump_exclude_none, from_result
 from backend.bitrix24.dto.userfield import Userfield, UserfieldCreate, UserfieldUpdate
 
-EntityName = Literal["deal", "lead", "contact"]
+EntityName = Literal["deal", "lead", "contact", "company"]
 
 
 class UserfieldService:

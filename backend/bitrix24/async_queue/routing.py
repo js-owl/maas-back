@@ -2,6 +2,7 @@
 from typing import Any
 
 from backend.bitrix24.dto.category import CategoryCreate, CategoryUpdate
+from backend.bitrix24.dto.company import CompanyCreate, CompanyUpdate
 from backend.bitrix24.dto.contact import ContactCreate, ContactUpdate
 from backend.bitrix24.dto.deal import DealCreate, DealUpdate
 from backend.bitrix24.dto.invoice import InvoiceCreate, InvoiceUpdate
@@ -19,6 +20,7 @@ from backend.bitrix24.dto.product_row import ProductRowCreate, ProductRowUpdate
 from backend.bitrix24.dto.status import StatusCreate, StatusUpdate
 from backend.bitrix24.dto.userfield import UserfieldCreate, UserfieldUpdate
 from backend.bitrix24.services.category import CategoryService
+from backend.bitrix24.services.company import CompanyService
 from backend.bitrix24.services.contact import ContactService
 from backend.bitrix24.services.deal import DealService
 from backend.bitrix24.services.invoice import InvoiceService
@@ -43,6 +45,11 @@ ENTITY_TYPE_ROUTING: dict[str, RoutingEntry] = {
         "service": ContactService,
         "actions": {"create": "add", "update": "update", "delete": "delete"},
         "dto": {"create": ContactCreate, "update": ContactUpdate},
+    },
+    "company": {
+        "service": CompanyService,
+        "actions": {"create": "add", "update": "update"},
+        "dto": {"create": CompanyCreate, "update": CompanyUpdate},
     },
     "lead": {
         "service": LeadService,

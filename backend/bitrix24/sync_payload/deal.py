@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.bitrix24.dto.deal import Deal, DealCreate, DealUpdate
 from backend.bitrix24.repositories import constant_entity_repository as const_repo
-from backend.models import Kit
+from backend.models import Kit, User
 from backend.bitrix24.repositories.mapping_repository import get_bitrix_id, get_maas_id
 from backend.bitrix24.funnel_cache import resolve_stage_name
 from backend.bitrix24.sync_payload.external_lists import (
@@ -79,10 +79,7 @@ async def _build_deal_userfields_from_kit(
 
 
 async def _build_deal_base_fields(db: AsyncSession, kit: Kit) -> dict[str, Any]:
-    """Build common deal fields from kit (TITLE, STAGE_ID, OPPORTUNITY, CONTACT_IDS).
-    Contact ID is resolved via id mapping (kit.user_id -> Bitrix contact); contacts
-    are not synced on deal change, so we rely on the mapping.
-    """
+    """Build common deal fields from kit (TITLE, STAGE_ID, OPPORTUNITY, CONTACT_IDS/COMPANY_ID)."""
     kit_id = getattr(kit, "kit_id", "")
     base: dict[str, Any] = {
         "TITLE": getattr(kit, "kit_name", None) or f"Kit {kit_id}",
@@ -91,9 +88,15 @@ async def _build_deal_base_fields(db: AsyncSession, kit: Kit) -> dict[str, Any]:
     }
     user_id = getattr(kit, "user_id", None)
     if user_id is not None:
-        bitrix_contact_id = await get_bitrix_id(db, user_id, "contact")
-        if bitrix_contact_id is not None:
-            base["CONTACT_IDS"] = [bitrix_contact_id]
+        user = await db.get(User, user_id)
+        if user is not None and getattr(user, "user_type", None) == "legal":
+            bitrix_company_id = await get_bitrix_id(db, user_id, "company")
+            if bitrix_company_id is not None:
+                base["COMPANY_ID"] = int(bitrix_company_id)
+        else:
+            bitrix_contact_id = await get_bitrix_id(db, user_id, "contact")
+            if bitrix_contact_id is not None:
+                base["CONTACT_IDS"] = [int(bitrix_contact_id)]
     return base
 
 

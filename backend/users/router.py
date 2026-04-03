@@ -12,10 +12,8 @@ from typing import List
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
 from backend.auth.dependencies import get_current_user, get_current_admin_user
-from backend.users.service import update_user, get_users, delete_user, get_user_by_id
-from backend.bitrix24.async_queue import enqueue_operation
-from backend.bitrix24.repositories.mapping_repository import get_bitrix_id
-from backend.bitrix24.sync_payload.contact import user_to_contact_update
+from backend.users.service import update_user, get_users, delete_user, hard_delete_user, get_user_by_id, get_active_user_by_id
+from backend.bitrix24.user_sync import enqueue_user_upsert
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -101,29 +99,25 @@ async def update_profile(
     
     try:
         logger.info(f"Attempting to update profile for user {current_user.id}")
+        previous_user_type = current_user.user_type
         updated_user = await update_user(db, current_user.id, user_update)
         if not updated_user:
             logger.error(f"User {current_user.id} not found after update attempt")
             raise HTTPException(status_code=404, detail="User not found")
         
         if BITRIX_ENABLED:
-            bitrix_contact_id = await get_bitrix_id(db, updated_user.id, "contact")
-            if bitrix_contact_id is not None:
-                try:
-                    contact_dto = user_to_contact_update(updated_user)
-                    payload = contact_dto.model_dump(exclude_none=True)
-                    await enqueue_operation(
-                        entity_type="contact",
-                        action="update",
-                        payload=payload,
-                        external_id=bitrix_contact_id,
-                        redis=redis,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to enqueue Bitrix24 contact update for user %s",
-                        updated_user.id,
-                    )
+            try:
+                await enqueue_user_upsert(
+                    db,
+                    redis,
+                    updated_user,
+                    previous_user_type=previous_user_type,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue Bitrix24 user sync for user %s",
+                    updated_user.id,
+                )
         
         logger.info(f"Profile updated successfully for user {current_user.id} (type: {updated_user.user_type})")
         return updated_user
@@ -153,7 +147,7 @@ async def get_user_by_id_endpoint(
 ):
     """Get user by ID (admin only)"""
     try:
-        user = await get_user_by_id(db, user_id)
+        user = await get_active_user_by_id(db, user_id)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
         return user
@@ -173,28 +167,26 @@ async def update_user_by_id_endpoint(
 ):
     """Update user by ID (admin only)"""
     try:
+        previous_user = await get_user_by_id(db, user_id)
+        previous_user_type = previous_user.user_type if previous_user else None
+
         updated_user = await update_user(db, user_id, user_update)
         if not updated_user:
             raise HTTPException(status_code=404, detail="User not found")
         
         if BITRIX_ENABLED:
-            bitrix_contact_id = await get_bitrix_id(db, updated_user.id, "contact")
-            if bitrix_contact_id is not None:
-                try:
-                    contact_dto = user_to_contact_update(updated_user)
-                    payload = contact_dto.model_dump(exclude_none=True)
-                    await enqueue_operation(
-                        entity_type="contact",
-                        action="update",
-                        payload=payload,
-                        external_id=bitrix_contact_id,
-                        redis=redis,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to enqueue Bitrix24 contact update for user %s",
-                        updated_user.id,
-                    )
+            try:
+                await enqueue_user_upsert(
+                    db,
+                    redis,
+                    updated_user,
+                    previous_user_type=previous_user_type,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to enqueue Bitrix24 user sync for user %s",
+                    updated_user.id,
+                )
         
         return updated_user
     except HTTPException:
@@ -209,11 +201,27 @@ async def delete_user_endpoint(
     db: AsyncSession = Depends(get_db), 
     current_user: models.User = Depends(get_current_admin_user)
 ):
-    """Delete user (admin only)"""
+    """Soft delete user by setting status to 'cancelled' (admin only)."""
     if user_id == current_user.id:
         raise HTTPException(status_code=400, detail="Cannot delete yourself")
     
     success = await delete_user(db, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
-    return {"message": "User deleted successfully"}
+    return {"message": "User cancelled successfully"}
+
+
+@router.delete('/users/{user_id}/hard', response_model=schemas.MessageResponse, tags=["Admin", "Users"])
+async def hard_delete_user_endpoint(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_admin_user)
+):
+    """Permanently delete user from database (admin only)."""
+    if user_id == current_user.id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+
+    success = await hard_delete_user(db, user_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"message": "User permanently deleted"}

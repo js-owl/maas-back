@@ -4,7 +4,7 @@ Database operations for user management
 """
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, or_
 from backend import models, schemas
 from backend.core.base_repository import BaseRepository
 from backend.core.exceptions import NotFoundException
@@ -83,8 +83,24 @@ async def get_user_by_username(db: AsyncSession, username: str) -> Optional[mode
 
 
 async def get_users(db: AsyncSession) -> List[models.User]:
-    """Get all users (backward compatibility)"""
-    return await user_repository.get_all(db, skip=0, limit=10000)  # Increase limit to avoid pagination issues
+    """Get all active users (backward compatibility)."""
+    result = await db.execute(
+        select(models.User).where(
+            or_(models.User.status.is_(None), models.User.status != "cancelled")
+        )
+    )
+    return result.scalars().all()
+
+
+async def get_active_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User]:
+    """Get active user by ID, excluding cancelled users."""
+    result = await db.execute(
+        select(models.User).where(
+            models.User.id == user_id,
+            or_(models.User.status.is_(None), models.User.status != "cancelled"),
+        )
+    )
+    return result.scalar_one_or_none()
 
 
 async def update_user(db: AsyncSession, user_id: int, user_update: schemas.UserUpdate) -> Optional[models.User]:
@@ -96,7 +112,19 @@ async def update_user(db: AsyncSession, user_id: int, user_update: schemas.UserU
 
 
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
-    """Delete user (backward compatibility)"""
+    """Soft delete user by setting status to 'cancelled'."""
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        return False
+    user.status = "cancelled"
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return True
+
+
+async def hard_delete_user(db: AsyncSession, user_id: int) -> bool:
+    """Permanently delete user from database."""
     try:
         return await user_repository.delete(db, user_id)
     except NotFoundException:

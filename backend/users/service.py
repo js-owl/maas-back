@@ -10,8 +10,10 @@ from backend.users.repository import (
     get_user_by_id as repo_get_user_by_id,
     get_user_by_username as repo_get_user_by_username,
     get_users as repo_get_users,
+    get_active_user_by_id as repo_get_active_user_by_id,
     update_user as repo_update_user,
-    delete_user as repo_delete_user
+    delete_user as repo_delete_user,
+    hard_delete_user as repo_hard_delete_user
 )
 
 
@@ -33,6 +35,11 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[models.User]:
     """Get user by username"""
     return await repo_get_user_by_username(db, username)
+
+
+async def get_active_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User]:
+    """Get active user by ID, excluding cancelled users."""
+    return await repo_get_active_user_by_id(db, user_id)
 
 
 async def get_users(db: AsyncSession) -> List[models.User]:
@@ -57,5 +64,10 @@ async def update_user(db: AsyncSession, user_id: int, user_update: schemas.UserU
 
 
 async def delete_user(db: AsyncSession, user_id: int) -> bool:
-    """Delete user"""
+    """Soft delete user by setting status to 'cancelled'."""
     return await repo_delete_user(db, user_id)
+
+
+async def hard_delete_user(db: AsyncSession, user_id: int) -> bool:
+    """Permanently delete user from database."""
+    return await repo_hard_delete_user(db, user_id)

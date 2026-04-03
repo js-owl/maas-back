@@ -33,6 +33,7 @@ from backend.bitrix24.client import BitrixClient
 from backend.bitrix24.startup_sync import run_constant_entity_startup_sync
 from backend.bitrix24.funnel_cache import sync_deal_funnels
 from backend.bitrix24.seed_constant_entities import seed_constant_entity_initial_data
+from backend.bitrix24.user_sync import enqueue_missing_users_startup_sync
 from backend.bitrix24.sync_payload.external_lists import fetch_list_values
 from backend.core.middleware import https_redirect_middleware
 from backend.core.dependencies import get_db
@@ -46,9 +47,10 @@ from backend.core.error_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from backend.database import (
-    seed_admin, ensure_schema,
+    seed_admin, ensure_schema, 
     force_users_location_null,
     _env_json_dict, apply_admin_location_overrides,
+    ensure_demo_files,
     AsyncSessionLocal
 )
 from sqlalchemy import select, func
@@ -440,6 +442,7 @@ async def startup_event():
     overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
     await apply_admin_location_overrides(overrides)
     await force_users_location_null()
+    await ensure_demo_files()
 
     # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
     try:
@@ -477,6 +480,14 @@ async def startup_event():
 
     # Initialize Redis connection pool
     await init_redis(app)
+
+    # Backward-compatibility startup sync for existing users: enqueue only missing non-admin, non-cancelled users
+    if BITRIX_ENABLED and BITRIX24_WEBHOOK_URL:
+        try:
+            async with AsyncSessionLocal() as db:
+                await enqueue_missing_users_startup_sync(db, app.state.redis)
+        except Exception as e:
+            logger.warning("Startup user sync failed (non-fatal): %s", e, exc_info=True)
 
     # Start Bitrix24 executor process
     start_executor_process(app)

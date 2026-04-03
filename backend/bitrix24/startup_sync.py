@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 # Entity name for userfield service: ENTITY_ID has prefix CRM_ (e.g. CRM_DEAL, CRM_LEAD, CRM_CONTACT)
 def _entity_name_from_entity_id(entity_id: str) -> str:
     name = entity_id.replace("CRM_", "", 1).strip().lower()
-    return name if name in ("deal", "lead", "contact") else name
+    return name if name in ("deal", "lead", "contact", "company") else name
 
 
 async def _sync_categories(db: AsyncSession, client: BitrixClient) -> None:

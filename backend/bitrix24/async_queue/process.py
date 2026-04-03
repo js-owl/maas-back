@@ -70,6 +70,7 @@ def start_executor_process(app: FastAPI) -> None:
 
     try:
         mp.set_start_method("spawn", force=True)
+        logger.info("Bitrix24 executor process, start method: spawn")
     except RuntimeError:
         pass
 

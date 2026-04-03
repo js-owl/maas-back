@@ -151,26 +151,10 @@ async def run_contact_sync(
     redis: Redis,
     db: AsyncSession,
 ) -> None:
-    """List modified contacts, resolve to MaaS users, skip create-only, apply updates. Persist timestamp after run."""
-    filter_ts = await get_sync_ts_for_filter(redis, "contact")
-    bitrix_ids = await list_modified_contact_ids(client, filter_ts)
-    filter_ts = _now_iso()
-    contact_svc = ContactService(client)
-    for bitrix_id in bitrix_ids:
-        maas_id = await get_maas_id(db, bitrix_id, "contact")
-        if maas_id is None:
-            continue
-        try:
-            contact = await contact_svc.get(bitrix_id)
-            if _is_create_only_contact(contact):
-                continue
-            payload = contact_to_user_update(contact)
-            if not payload:
-                continue
-            await users_repo.update_user(db, maas_id, schemas.UserUpdate(**payload))
-        except Exception as exc:
-            logger.warning("Reverse sync contact bitrix_id=%s maas_id=%s failed: %s", bitrix_id, maas_id, exc, exc_info=True)
-    await set_last_sync_ts(redis, "contact", filter_ts)
+    """Users are one-way synced from MaaS to Bitrix; Bitrix contact edits must not modify MaaS users."""
+    ts = _now_iso()
+    await set_last_sync_ts(redis, "contact", ts)
+    logger.info("Reverse sync for Bitrix contacts is disabled: MaaS service is the source of truth for users")
 
 
 async def run_product_sync(
@@ -322,8 +306,7 @@ async def run_reverse_sync(
     redis: Redis,
     db: AsyncSession,
 ) -> None:
-    """Run contact sync, then deal sync, then product sync (each with its own last_sync_ts)."""
-    await run_contact_sync(client, redis, db)
+    """Run only deal/product reverse sync. Users are one-way synced from MaaS to Bitrix."""
     await run_deal_sync(client, redis, db)
     await run_product_sync(client, redis, db)
 

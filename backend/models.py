@@ -32,6 +32,7 @@ class User(Base):
     is_admin = Column(Boolean, default=False)
     location = Column(Text, default=DEFAULT_LOCATION)
     must_change_password = Column(Boolean, default=False)
+    office = Column(String, nullable=True)
     payment_account = Column(String, nullable=True)
     payment_bank_name = Column(String, nullable=True)
     payment_bik = Column(String, nullable=True)
@@ -45,9 +46,9 @@ class User(Base):
     postal = Column(String, nullable=True)
     region = Column(String, nullable=True)
     street = Column(String, nullable=True)
+    status = Column(String, default="active")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
-    # "individual" or "legal"
-    user_type = Column(String, default="individual")
+    user_type = Column(String, default="individual") # "individual" or "legal"
     username = Column(String, unique=True, index=True)
     # --- relationships ---
     documents = relationship('DocumentStorage', back_populates='user')

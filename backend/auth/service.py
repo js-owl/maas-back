@@ -52,6 +52,8 @@ async def authenticate_user(db, username: str, password: str):
     user = result.scalar_one_or_none()
     if not user:
         return None
+    if getattr(user, "status", "active") == "cancelled":
+        return None
     if not verify_password(password, user.hashed_password):
         return None
     return user

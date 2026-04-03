@@ -10,8 +10,7 @@ from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
 from backend.core.redis import get_redis
 from backend.core.config import BITRIX_ENABLED, DEFAULT_LOCATION
-from backend.bitrix24.async_queue import enqueue_operation
-from backend.bitrix24.sync_payload.contact import user_to_contact_create
+from backend.bitrix24.user_sync import enqueue_user_create
 from backend.auth.service import authenticate_user, create_access_token, get_password_hash
 from backend.auth.dependencies import get_current_user
 from backend.users.repository import get_user_by_id
@@ -102,20 +101,11 @@ async def register_user(
     logger.info(f"User created: {db_user.id} - {db_user.username}")
 
     if BITRIX_ENABLED:
-        contact = user_to_contact_create(db_user)
-        payload = contact.model_dump(exclude_none=True)
-
         try:
-            await enqueue_operation(
-                entity_type="contact",
-                action="create",
-                payload=payload,
-                local_id=db_user.id,
-                redis=redis,
-            )
+            await enqueue_user_create(db, redis, db_user)
         except Exception:
             logger.exception(
-                "Failed to enqueue Bitrix24 contact sync for user %s",
+                "Failed to enqueue Bitrix24 user sync for user %s",
                 db_user.id,
             )
     return db_user

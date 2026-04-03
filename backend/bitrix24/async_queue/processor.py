@@ -17,17 +17,33 @@ from backend.bitrix24.client import BitrixClient
 from backend.bitrix24.constants import OwnerType
 from backend.bitrix24.dto.product_row import ProductRowCreate
 from backend.bitrix24.product_property_value_ids import extract_property_value_ids
-from backend.bitrix24.repositories.mapping_repository import get_bitrix_id, upsert_mapping
+from backend.bitrix24.exceptions import BitrixAPIError
+from backend.bitrix24.repositories.mapping_repository import delete_mappings_by_entity, get_bitrix_id, upsert_mapping
 from backend.bitrix24.services.product import ProductService
 from backend.bitrix24.services.product_row import ProductRowService
 from backend.bitrix24.services.deal import DealService
+from backend.bitrix24.services.company_legal_profile import (
+    sync_company_legal_profile,
+)
+from backend.bitrix24.services.contact_profile import sync_contact_profile
+from backend.bitrix24.services.requisite_link_sync import (
+    sync_deal_requisite_link,
+    sync_invoice_requisite_link,
+)
 from backend.bitrix24.funnel_cache import get_or_create_deal_category_id, resolve_stage_id
 from backend.calculations.proxy import get_locations
 from backend.database import AsyncSessionLocal
-from backend.models import Kit, Order
+from backend.models import Kit, Order, User
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
+
+
+def _is_remote_missing_error(exc: Exception) -> bool:
+    if not isinstance(exc, BitrixAPIError):
+        return False
+    hay = f"{exc.code} {exc.description}".lower()
+    return exc.status_code == 404 or "not found" in hay or "не найден" in hay or "could not find" in hay
 
 
 class ProcessingError(Exception):
@@ -247,6 +263,7 @@ async def process_message(
         )
         method_name = action_map[message.action]
 
+        recreated_on_missing = False
         if message.entity_type == "category":
             entity_type_id = payload.get("entity_type_id")
             if entity_type_id is None:
@@ -262,20 +279,42 @@ async def process_message(
                     entity_type_id, message.external_id
                 )
         else:
-            if message.action == "create":
-                result = await getattr(service, method_name)(fields)
-            elif message.action == "update":
-                result = await getattr(service, method_name)(message.external_id, fields)
-            else:
-                result = await getattr(service, method_name)(message.external_id)
+            try:
+                if message.action == "create":
+                    result = await getattr(service, method_name)(fields)
+                elif message.action == "update":
+                    result = await getattr(service, method_name)(message.external_id, fields)
+                else:
+                    result = await getattr(service, method_name)(message.external_id)
+            except Exception as service_error:
+                if (
+                    message.action == "update"
+                    and message.local_id is not None
+                    and message.entity_type in {"company", "contact"}
+                    and _is_remote_missing_error(service_error)
+                ):
+                    create_method_name = action_map.get("create")
+                    if not create_method_name:
+                        raise
+                    logger.warning(
+                        "Bitrix %s id=%s for MaaS id=%s was not found during update; recreating entity",
+                        message.entity_type,
+                        message.external_id,
+                        message.local_id,
+                    )
+                    result = await getattr(service, create_method_name)(fields)
+                    recreated_on_missing = True
+                else:
+                    raise
 
-        if message.action == "create" and idempotency_claimed:
+        if ((message.action == "create" and idempotency_claimed) or recreated_on_missing) and message.local_id is not None:
             bitrix_id = _extract_bitrix_id(result)
             if bitrix_id is not None:
-                await store_idempotency_token(
-                    redis, message.entity_type, message.local_id, bitrix_id
-                )
-                
+                if message.action == "create" and idempotency_claimed:
+                    await store_idempotency_token(
+                        redis, message.entity_type, message.local_id, bitrix_id
+                    )
+
                 # Store mapping in database
                 try:
                     async with AsyncSessionLocal() as db:
@@ -285,6 +324,11 @@ async def process_message(
                             bitrix_id=int(bitrix_id) if isinstance(bitrix_id, str) else bitrix_id,
                             entity_type=message.entity_type
                         )
+                        if recreated_on_missing and message.entity_type == "company":
+                            await delete_mappings_by_entity(db, message.local_id, "company_requisite")
+                            await delete_mappings_by_entity(db, message.local_id, "company_bank_detail")
+                        if recreated_on_missing and message.entity_type == "contact":
+                            await delete_mappings_by_entity(db, message.local_id, "contact_requisite")
                         logger.info(
                             "Created mapping: %s MaaS ID %s <-> Bitrix ID %s",
                             message.entity_type,
@@ -304,6 +348,74 @@ async def process_message(
                     )
 
         if (
+            message.entity_type == "company"
+            and message.local_id is not None
+            and message.action in ("create", "update")
+        ):
+            company_bitrix_id = (
+                _extract_bitrix_id(result)
+                if (message.action == "create" or recreated_on_missing)
+                else message.external_id
+            )
+            if company_bitrix_id is not None:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        user = await db.get(User, message.local_id)
+                        if user is None:
+                            logger.warning(
+                                "Skipping Bitrix company legal profile sync: MaaS user_id=%s not found",
+                                message.local_id,
+                            )
+                        else:
+                            await sync_company_legal_profile(
+                                db,
+                                client,
+                                user=user,
+                                company_id=int(company_bitrix_id),
+                            )
+                except Exception as legal_sync_err:
+                    logger.warning(
+                        "Bitrix company legal profile sync failed for company_id=%s maas_user_id=%s: %s",
+                        company_bitrix_id,
+                        message.local_id,
+                        legal_sync_err,
+                        exc_info=True,
+                    )
+        elif (
+            message.entity_type == "contact"
+            and message.local_id is not None
+            and message.action in ("create", "update")
+        ):
+            contact_bitrix_id = (
+                _extract_bitrix_id(result)
+                if (message.action == "create" or recreated_on_missing)
+                else message.external_id
+            )
+            if contact_bitrix_id is not None:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        user = await db.get(User, message.local_id)
+                        if user is None:
+                            logger.warning(
+                                "Skipping Bitrix contact profile sync: MaaS user_id=%s not found",
+                                message.local_id,
+                            )
+                        else:
+                            await sync_contact_profile(
+                                db,
+                                client,
+                                user=user,
+                                contact_id=int(contact_bitrix_id),
+                            )
+                except Exception as contact_sync_err:
+                    logger.warning(
+                        "Bitrix contact profile sync failed for contact_id=%s maas_user_id=%s: %s",
+                        contact_bitrix_id,
+                        message.local_id,
+                        contact_sync_err,
+                        exc_info=True,
+                    )
+        elif (
             message.entity_type == "product"
             and message.local_id is not None
             and message.action in ("create", "update")
@@ -368,6 +480,22 @@ async def process_message(
             )
             if deal_bitrix_id is not None:
                 try:
+                    async with AsyncSessionLocal() as db:
+                        await sync_deal_requisite_link(
+                            db,
+                            client,
+                            kit_id=message.local_id,
+                            deal_id=int(deal_bitrix_id),
+                        )
+                except Exception as link_err:
+                    logger.warning(
+                        "Deal requisite link sync failed for kit_id=%s deal_id=%s: %s",
+                        message.local_id,
+                        deal_bitrix_id,
+                        link_err,
+                        exc_info=True,
+                    )
+                try:
                     await _sync_deal_product_rows(
                         client, int(deal_bitrix_id), message.local_id
                     )
@@ -376,6 +504,26 @@ async def process_message(
                         "Deal product rows sync failed for kit_id=%s: %s",
                         message.local_id,
                         row_err,
+                        exc_info=True,
+                    )
+        elif message.entity_type == "invoice" and message.action in ("create", "update"):
+            invoice_bitrix_id = (
+                _extract_bitrix_id(result) if message.action == "create" else message.external_id
+            )
+            if invoice_bitrix_id is not None:
+                try:
+                    async with AsyncSessionLocal() as db:
+                        await sync_invoice_requisite_link(
+                            db,
+                            client,
+                            invoice_id=int(invoice_bitrix_id),
+                            payload=payload,
+                        )
+                except Exception as link_err:
+                    logger.warning(
+                        "Invoice requisite link sync failed for invoice_id=%s: %s",
+                        invoice_bitrix_id,
+                        link_err,
                         exc_info=True,
                     )
         return result

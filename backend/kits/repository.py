@@ -1,7 +1,7 @@
 import json
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, or_
 from backend import models
 
 
@@ -169,25 +169,29 @@ async def soft_delete_kit(db: AsyncSession, kit_id: int) -> bool:
 
 async def hard_delete_kit(db: AsyncSession, kit_id: int) -> bool:
     """
-    Hard delete kit:
-    - unlink orders: set Order.kit_id = NULL for orders in this kit (source of truth = orders.kit_id)
-    - delete kit row
+    Hard delete kit (admin only via router):
+    - unlink related orders by clearing Order.kit_id
+    - delete kit row from database
     """
-    return soft_delete_kit(db, kit_id)
+    kit = await db.get(models.Kit, kit_id)
+    if not kit:
+        return False
 
-    # kit = await db.get(models.Kit, kit_id)
-    # if not kit:
-    #     return False
+    linked_order_ids = set(_safe_parse_order_ids(kit.order_ids))
 
-    # # Unlink orders from kit
-    # res = await db.execute(select(models.Order).where(models.Order.kit_id == kit_id))
-    # orders = res.scalars().all()
-    # for o in orders:
-    #     o.kit_id = None
-    #     db.add(o)
+    conditions = [models.Order.kit_id == kit_id]
+    if linked_order_ids:
+        conditions.append(models.Order.order_id.in_(linked_order_ids))
 
-    # await db.commit()
+    res = await db.execute(
+        select(models.Order).where(or_(*conditions))
+    )
+    orders = res.scalars().all()
+    for order in orders:
+        order.kit_id = None
+        db.add(order)
 
-    # await db.delete(kit)
-    # await db.commit()
-    # return True
+    await db.flush()
+    await db.delete(kit)
+    await db.commit()
+    return True

@@ -103,8 +103,8 @@ class UserUpdate(BaseModel):
     phone_number: Optional[str] = None
     personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
-    # Additional fields for legal entities
     building: Optional[str] = None
+    office: Optional[str] = None
     region: Optional[str] = None
     street: Optional[str] = None
     postal: Optional[str] = None
@@ -151,6 +151,7 @@ class UserOut(BaseModel):
     is_admin: bool
     must_change_password: bool
     user_type: str
+    status: str
     email: Optional[str] = None
     full_name: Optional[str] = None
     city: Optional[str] = None
@@ -158,8 +159,8 @@ class UserOut(BaseModel):
     phone_number: Optional[str] = None
     personal_phone_number: Optional[str] = None
     payment_card_number: Optional[str] = None
-    # Additional fields for legal entities
     building: Optional[str] = None
+    office: Optional[str] = None
     region: Optional[str] = None
     street: Optional[str] = None
     postal: Optional[str] = None
@@ -176,13 +177,10 @@ class UserOut(BaseModel):
     # Timestamps
     created_at: datetime
     
-    class Config:
-        from_attributes = True
-
-# Removed manufacturing service schemas - now using calculator services directly
-    
-    class Config:
-        from_attributes = True
+    @field_validator("status", mode="before")
+    @classmethod
+    def fallback_status(cls, v):
+        return v or "active"
 
 # File Storage schemas
 class FileStorageOut(BaseModel):

@@ -38,6 +38,8 @@ async def get_current_user(
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
+    if getattr(user, "status", "active") == "cancelled":
+        raise HTTPException(status_code=403, detail="User account is cancelled")
     
     return user
 
@@ -74,4 +76,6 @@ async def get_optional_current_user(
     
     result = await db.execute(select(models.User).where(models.User.username == username))
     user = result.scalar_one_or_none()
+    if user is not None and getattr(user, "status", "active") == "cancelled":
+        return None
     return user

@@ -29,6 +29,7 @@ _KIND_KEY = "kind"
 _SORT_STEP = 100
 _DEF_ENUM = "N"
 _ENTITY_DEAL = "CRM_DEAL"
+_ENTITY_COMPANY = "CRM_COMPANY"
 
 _KIND_DEAL = "deal_userfield"
 _KIND_PRODUCT = "product_property"
@@ -103,7 +104,7 @@ class EntityStore:
         # List/enum values (stored separately; not sent as LIST to repo)
         enums: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Add a deal userfield. Accepts all Bitrix userfield fields; only non-None are used on init."""
+        """Add a CRM userfield entry. Defaults to CRM_DEAL for backward compatibility."""
         entry: dict[str, Any] = {
             _KIND_KEY: _KIND_DEAL,
             "ENTITY_ID": entity_id,
@@ -143,6 +144,51 @@ class EntityStore:
             entry[_ENUMS_KEY] = enums
         self._entries.append(entry)
         return entry
+
+    def add_company(
+        self,
+        *,
+        field_name: str,
+        user_type_id: str,
+        label: str,
+        xml_id: str | None = None,
+        sort: int | None = None,
+        multiple: str | None = None,
+        mandatory: str | None = None,
+        show_filter: str | None = None,
+        show_in_list: str | None = None,
+        edit_in_list: str | None = None,
+        is_searchable: str | None = None,
+        edit_form_label: dict[str, str] | None = None,
+        list_column_label: dict[str, str] | None = None,
+        list_filter_label: dict[str, str] | None = None,
+        error_message: dict[str, str] | None = None,
+        help_message: dict[str, str] | None = None,
+        settings: dict[str, Any] | None = None,
+        enums: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Add a company userfield."""
+        return self.add_deal(
+            entity_id=_ENTITY_COMPANY,
+            field_name=field_name,
+            user_type_id=user_type_id,
+            label=label,
+            xml_id=xml_id,
+            sort=sort,
+            multiple=multiple,
+            mandatory=mandatory,
+            show_filter=show_filter,
+            show_in_list=show_in_list,
+            edit_in_list=edit_in_list,
+            is_searchable=is_searchable,
+            edit_form_label=edit_form_label,
+            list_column_label=list_column_label,
+            list_filter_label=list_filter_label,
+            error_message=error_message,
+            help_message=help_message,
+            settings=settings,
+            enums=enums,
+        )
 
     def add_product(
         self,
@@ -521,6 +567,15 @@ def _create_entity_store() -> EntityStore:
         label="Стоимость доставки",
         xml_id="SHIPPING_COST",
     )
+
+    # --- Company userfields (CRM_COMPANY) ---
+    # Only MaaS metadata and fields without a native Bitrix home stay here.
+    # Legal/tax/bank/address data are stored in requisite + bank detail + requisite address.
+    store.add_company(field_name="UF_CRM_MAAS_USER_ID", user_type_id="integer", label="ID пользователя в Maas", xml_id="MAAS_USER_ID")
+    store.add_company(field_name="UF_CRM_USERNAME", user_type_id="string", label="Логин пользователя", xml_id="USERNAME")
+    store.add_company(field_name="UF_CRM_USER_TYPE", user_type_id="string", label="Тип пользователя", xml_id="USER_TYPE")
+    store.add_company(field_name="UF_CRM_PAYMENT_CARD_NUMBER", user_type_id="string", label="Номер карты", xml_id="PAYMENT_CARD_NUMBER")
+    store.add_company(field_name="UF_CRM_LOCATION", user_type_id="string", label="Локация пользователя", xml_id="LOCATION")
 
     # --- Catalog product properties (UP_CAT_*) ---
     store.add_product(

@@ -36,7 +36,9 @@ from backend.bitrix24.dto.product_property_enum import (
 from backend.bitrix24.dto.product_row import ProductRow, ProductRowCreate, ProductRowUpdate
 from backend.bitrix24.dto.invoice import Invoice, InvoiceCreate, InvoiceUpdate
 from backend.bitrix24.dto.lead import Lead, LeadCreate, LeadUpdate
+from backend.bitrix24.dto.company import Company, CompanyCreate, CompanyUpdate
 from backend.bitrix24.dto.contact import Contact, ContactCreate, ContactUpdate
+from backend.bitrix24.dto.requisite_link import RequisiteLink, RequisiteLinkFields
 from backend.bitrix24.services.deal import DealService
 from backend.bitrix24.services.status import StatusService
 from backend.bitrix24.services.category import CategoryService
@@ -47,7 +49,9 @@ from backend.bitrix24.services.product_property_enum import ProductPropertyEnumS
 from backend.bitrix24.services.product_row import ProductRowService
 from backend.bitrix24.services.invoice import InvoiceService
 from backend.bitrix24.services.lead import LeadService
+from backend.bitrix24.services.company import CompanyService
 from backend.bitrix24.services.contact import ContactService
+from backend.bitrix24.services.requisite_link import RequisiteLinkService
 
 __all__ = [
     "BitrixClient",
@@ -96,8 +100,15 @@ __all__ = [
     "LeadCreate",
     "LeadUpdate",
     "LeadService",
+    "Company",
+    "CompanyCreate",
+    "CompanyUpdate",
+    "CompanyService",
     "Contact",
+    "RequisiteLink",
+    "RequisiteLinkFields",
     "ContactCreate",
     "ContactUpdate",
     "ContactService",
+    "RequisiteLinkService",
 ]

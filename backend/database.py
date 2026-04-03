@@ -142,11 +142,11 @@ async def ensure_demo_files() -> None:
             result = await session.execute(User.__table__.select().where(User.is_admin == True))
             row = result.first()
             if row and len(row) > 0:
-                uploader_id = row[0].id
+                uploader_id = row.id
             else:
                 result = await session.execute(User.__table__.select())
                 row = result.first()
-                uploader_id = (row[0].id if row and len(row) > 0 else None)
+                uploader_id = (row.id if row and len(row) > 0 else None)
 
             now = datetime.now(timezone.utc).replace(tzinfo=None)
 
@@ -191,8 +191,11 @@ async def ensure_demo_files() -> None:
 
             for id_value, fname in demo_mapping:
                 await upsert_demo(id_value, fname)
+                logger.info(f"{fname} upsert")
             await upsert_demo(special_id, special_filename)
-        except Exception:
+            logger.info(f"{special_filename} upsert")
+        except Exception as e:
+            logger.info(f"{e}")
             await session.rollback()
 
 

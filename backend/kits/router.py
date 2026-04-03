@@ -236,7 +236,7 @@ async def hard_delete_kit_endpoint(
 ):
     try:
         ok = await hard_delete_kit(db, kit_id=kit_id, current_user=current_user)
-        return {"success": ok, "message": "Replaced with soft deletion due to the inadmissibility of this action"}
+        return {"success": ok, "message": "Kit permanently deleted"}
     except ValueError as e:
         msg = str(e)
         code = 404 if "not found" in msg.lower() else 403 if "access" in msg.lower() else 400
