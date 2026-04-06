@@ -3,8 +3,6 @@ from sqlalchemy import Float
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
 
-from backend.core.config import DEFAULT_LOCATION
-
 Base = declarative_base()
 
 
@@ -30,7 +28,7 @@ class User(Base):
     full_name = Column(String, nullable=True)
     hashed_password = Column(String)
     is_admin = Column(Boolean, default=False)
-    location = Column(Text, default=DEFAULT_LOCATION)
+    location = Column(Text, nullable=True)
     must_change_password = Column(Boolean, default=False)
     office = Column(String, nullable=True)
     payment_account = Column(String, nullable=True)

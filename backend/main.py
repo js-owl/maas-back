@@ -32,6 +32,7 @@ from backend.bitrix24.async_queue.process import (
 from backend.bitrix24.client import BitrixClient
 from backend.bitrix24.startup_sync import run_constant_entity_startup_sync
 from backend.bitrix24.funnel_cache import sync_deal_funnels
+from backend.bitrix24.services.my_company_startup import sync_my_company_startup
 from backend.bitrix24.seed_constant_entities import seed_constant_entity_initial_data
 from backend.bitrix24.user_sync import enqueue_missing_users_startup_sync
 from backend.bitrix24.sync_payload.external_lists import fetch_list_values
@@ -48,7 +49,6 @@ from backend.core.error_handlers import (
 from fastapi.exceptions import RequestValidationError
 from backend.database import (
     seed_admin, ensure_schema, 
-    force_users_location_null,
     _env_json_dict, apply_admin_location_overrides,
     ensure_demo_files,
     AsyncSessionLocal
@@ -441,7 +441,6 @@ async def startup_event():
     await ensure_schema()
     overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
     await apply_admin_location_overrides(overrides)
-    await force_users_location_null()
     await ensure_demo_files()
 
     # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
@@ -469,6 +468,7 @@ async def startup_event():
                 await run_constant_entity_startup_sync(db, client)
                 # Pull current deal funnels (pipelines) and their stages for local cache
                 await sync_deal_funnels(db, client)
+                await sync_my_company_startup(db, client)
         except Exception as e:
             logger.warning("Constant-entity startup sync failed (non-fatal): %s", e)
 

@@ -74,7 +74,7 @@ async def get_kit_calculation_summary_endpoint(
         code = 404 if "not found" in msg.lower() else 403 if "access" in msg.lower() else 400
         raise HTTPException(status_code=code, detail=msg)
 
-@router.post("/kits/{kit_id}/confirm", response_model=schemas.KitOut, tags=["Kits"])
+@router.put("/kits/{kit_id}/confirm", response_model=schemas.KitOut, tags=["Kits"])
 async def confirm_kit_endpoint(
     kit_id: int,
     current_user: models.User = Depends(get_current_user),

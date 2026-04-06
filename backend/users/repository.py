@@ -40,6 +40,9 @@ class UserRepository(BaseRepository[models.User]):
             hashed_password = get_password_hash(user.password)
             user_data = user.dict(exclude={'password'})
             user_data['hashed_password'] = hashed_password
+            user_data.setdefault('status', 'active')
+            if 'location' not in user_data or (isinstance(user_data.get('location'), str) and not user_data.get('location').strip()):
+                user_data['location'] = None
             
             db_user = await self.create(db, **user_data)
             logger.info(f"[CREATE_USER] User: {db_user.username} (ID: {db_user.id}) - Created")

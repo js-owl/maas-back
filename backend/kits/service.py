@@ -45,15 +45,16 @@ async def create_kit_from_orders(
         if foreign:
             raise ValueError(f"Orders do not belong to current user: {foreign}")
 
+    effective_user_id = current_user.id if not current_user.is_admin else orders[0].user_id
     res_loc = await db.execute(
         select(models.User.location)
-        .where(models.User.id == current_user.id)
+        .where(models.User.id == effective_user_id)
     )
     user_location = res_loc.scalar_one_or_none()
 
     kit = await kits_repo.create_kit(
         db,
-        user_id=current_user.id if not current_user.is_admin else orders[0].user_id,
+        user_id=effective_user_id,
         kit_name=kit_name,
         quantity=quantity,
         status=status,

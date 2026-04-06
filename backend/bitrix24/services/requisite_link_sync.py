@@ -15,6 +15,10 @@ from backend.bitrix24.repositories.mapping_repository import (
     get_mapping_by_bitrix_id,
     get_mapping_by_maas_id,
 )
+from backend.bitrix24.services.my_company_startup import (
+    MYCOMPANY_ENTITY_TYPE,
+    MYCOMPANY_MAAS_ID,
+)
 from backend.bitrix24.services.invoice import InvoiceService
 from backend.bitrix24.services.requisite_link import RequisiteLinkService
 from backend.models import Kit, User
@@ -59,12 +63,20 @@ async def _resolve_client_link_values(db: AsyncSession, user: User) -> tuple[int
     return requisite_id, bank_detail_id
 
 
-async def _resolve_seller_link_values(*, invoice_has_mycompany: bool) -> tuple[int, int]:
+async def _resolve_seller_link_values(db: AsyncSession, *, invoice_has_mycompany: bool) -> tuple[int, int]:
     if not invoice_has_mycompany:
         return 0, 0
+
+    mc_requisite_id = _safe_int_env(_ENV_MC_REQUISITE_ID, 0)
+    mc_bank_detail_id = _safe_int_env(_ENV_MC_BANK_DETAIL_ID, 0)
+    if mc_requisite_id or mc_bank_detail_id:
+        return mc_requisite_id, mc_bank_detail_id
+
+    mapping = await get_mapping_by_maas_id(db, MYCOMPANY_MAAS_ID, MYCOMPANY_ENTITY_TYPE)
+    buffer = mapping.buffer if mapping and isinstance(mapping.buffer, dict) else {}
     return (
-        _safe_int_env(_ENV_MC_REQUISITE_ID, 0),
-        _safe_int_env(_ENV_MC_BANK_DETAIL_ID, 0),
+        _safe_int(buffer.get("mycompany_requisite_id"), 0),
+        _safe_int(buffer.get("mycompany_bank_detail_id"), 0),
     )
 
 
@@ -117,7 +129,7 @@ async def sync_deal_requisite_link(
         return False
 
     requisite_id, bank_detail_id = await _resolve_client_link_values(db, user)
-    mc_requisite_id, mc_bank_detail_id = await _resolve_seller_link_values(invoice_has_mycompany=False)
+    mc_requisite_id, mc_bank_detail_id = await _resolve_seller_link_values(db, invoice_has_mycompany=False)
 
     registered = await _register_link(
         client,
@@ -217,6 +229,7 @@ async def sync_invoice_requisite_link(
 
     requisite_id, bank_detail_id = await _resolve_client_link_values(db, user)
     mc_requisite_id, mc_bank_detail_id = await _resolve_seller_link_values(
+        db,
         invoice_has_mycompany=bool(_safe_int(mycompany_id, 0))
     )
 

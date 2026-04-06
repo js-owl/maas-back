@@ -190,9 +190,10 @@ def user_to_legal_address(
         "ENTITY_TYPE_ID": CRM_OWNER_TYPE_REQUISITE,
         "ENTITY_ID": int(requisite_id),
         "ADDRESS_1": address_1,
+        "ADDRESS_2": getattr(user, "office", None),
         "CITY": getattr(user, "city", None),
         "POSTAL_CODE": getattr(user, "postal", None),
-        "REGION": getattr(user, "region", None),
+        "PROVINCE": getattr(user, "region", None),
         "COUNTRY": country_name,
         "COUNTRY_CODE": country_code,
     }
@@ -216,9 +217,10 @@ def user_to_contact_address(
         "ENTITY_TYPE_ID": CRM_OWNER_TYPE_REQUISITE,
         "ENTITY_ID": int(requisite_id),
         "ADDRESS_1": address_1,
+        "ADDRESS_2": getattr(user, "office", None),
         "CITY": getattr(user, "city", None),
         "POSTAL_CODE": getattr(user, "postal", None),
-        "REGION": getattr(user, "region", None),
+        "PROVINCE": getattr(user, "region", None),
         "COUNTRY": country_name,
         "COUNTRY_CODE": country_code,
     }
