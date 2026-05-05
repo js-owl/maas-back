@@ -1,3 +1,14 @@
+# -----------------------------------------------------------------------------
+# Nexus / images (corporate registries)
+#
+# - backend: NEXUS_PUSH_IMAGE (default …/maas-hosted/maas-backend:dev-latest).
+#   CI build:development pushes to NEXUS_BUILD_REGISTRY/maas-hosted/maas-backend:<tag> (dev-latest).
+#   Align deploy env so pull/login match your Nexus (often same host as build registry).
+#
+# - postgres, redis, pgadmin: pull via Docker Hub proxy — NEXUS_BUILD_REGISTRY/maas-proxy/…
+#   (override POSTGRES_IMAGE etc. if your Nexus repository paths differ).
+# -----------------------------------------------------------------------------
+
 services:
   backend:
     image: ${NEXUS_PUSH_IMAGE:-vortex.kronshtadt.ru:8443/maas-hosted/maas-backend:dev-latest}

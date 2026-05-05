@@ -54,14 +54,13 @@ async def calculate_price(
     request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
-    """Calculate price without creating an order or requiring auth.
-    Supports both manual dimensions and automatic file analysis.
-    
-    Parameters:
-    - service_id: Manufacturing service type (e.g., "cnc-milling", "cnc-lathe", "printing", "painting")
-    - file_id: Optional file ID for automatic analysis (STP/STEP files supported)
-    - length/width/height: Manual dimensions (used if file_id not provided)
-    - cover_id: Array of strings for multiple cover types (e.g., ["1", "2"])
+    """Calculate price without creating an order or requiring authentication.
+
+    File input — supply exactly one of:
+    - **file_id** — ID of a previously uploaded file in the database.
+    - **file_name + file_type + file_data** — base64-encoded file submitted inline
+      (no prior upload required; available to anonymous users).
+    - *(neither)* — provide manual dimensions via length / width / height.
     """
     # Log the service ID being used
     logger.info(f"Using service_id: {request_data.service_id}")
@@ -98,46 +97,22 @@ async def calculate_price(
     
     cover_id_for_calculator = processed_cover_id
     
-    # Handle file input - either file_id (database) or file_data (base64)
+    # Handle file input — three mutually exclusive modes (enforced by schema):
+    #   1. file_id   → load base64 from DB record
+    #   2. file_data → inline base64 supplied directly by the caller
+    #   3. neither   → manual dimensions (length / width / height)
     file_data = None
     file_name = None
     file_type = None
-    
+
     if isinstance(request_data.file_id, int):
-        # Handle file_id case (existing file in database)
         from backend.files.repository import get_file_by_id
+        from backend.files.service import get_file_data_as_base64
         file_rec = await get_file_by_id(db, request_data.file_id)
         if not file_rec:
             raise HTTPException(status_code=404, detail="File not found")
-
-        # Authentication logic commented out - no auth required for calculate-price
-        # is_authenticated = False
-        # user_obj: Optional[models.User] = None
-        # if isinstance(authorization, str) and authorization:
-        #     try:
-        #         token = authorization.split(" ", 1)[1] if authorization.lower().startswith("bearer ") else authorization
-        #         payload = decode_access_token(token)
-        #         if payload and "sub" in payload:
-        #             username = payload["sub"]
-        #             result = await db.execute(select(models.User).where(models.User.username == username))
-        #             user_obj = result.scalar_one_or_none()
-        #             is_authenticated = user_obj is not None
-        #     except Exception:
-        #         is_authenticated = False
-
-        # File access control commented out - all files accessible for calculation
-        # is_demo_allowed = bool(getattr(file_rec, 'is_demo', False)) or (file_rec.id in (1, 2, 3, 4, 5))
-        # if not is_demo_allowed:
-        #     if not is_authenticated:
-        #         raise HTTPException(status_code=403, detail="Only demo files allowed for anonymous calculation")
-        #     if not (user_obj.is_admin or file_rec.uploaded_by == user_obj.id):
-        #         raise HTTPException(status_code=403, detail="File not owned by user")
-        
-        # Get file data as base64
-        from backend.files.service import get_file_data_as_base64
         file_data = await get_file_data_as_base64(file_rec)
         file_name = file_rec.original_filename or file_rec.filename
-        # Set correct file type for calculator service
         if file_name and file_name.lower().endswith('.stl'):
             file_type = "stl"
         elif file_name and file_name.lower().endswith(('.stp', '.step')):
@@ -145,6 +120,20 @@ async def calculate_price(
         else:
             file_type = file_rec.file_type or "application/octet-stream"
         logger.info(f"Using model id={request_data.file_id} filename={file_name}")
+
+    elif request_data.file_data:
+        file_data = request_data.file_data
+        file_name = request_data.file_name
+        raw_type = (request_data.file_type or "").lower()
+        if file_name and file_name.lower().endswith('.stl'):
+            file_type = "stl"
+        elif file_name and file_name.lower().endswith(('.stp', '.step')):
+            file_type = "stp"
+        elif raw_type in ("stl", "stp", "step"):
+            file_type = raw_type
+        else:
+            file_type = raw_type or "application/octet-stream"
+        logger.info(f"Using inline file filename={file_name} type={file_type}")
     
     # Use default values if not provided (let calculator service handle validation)
     quantity = request_data.quantity or 1

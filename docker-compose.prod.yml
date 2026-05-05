@@ -1,3 +1,12 @@
+# -----------------------------------------------------------------------------
+# Nexus — production host pulls ONLY the push registry (NEXUS_PUSH_REGISTRY).
+# CI build:production mirrors maas-proxy images into maas-hosted on the push registry
+# (same pattern as Redis). deploy:production docker login uses NEXUS_PUSH_* only.
+#
+# - backend: NEXUS_PUSH_IMAGE / maas-hosted/maas-backend (CI sed pins tag on deploy).
+# - redis, postgres, pgadmin: ${NEXUS_PUSH_REGISTRY}/maas-hosted/<image>:<tag>
+# -----------------------------------------------------------------------------
+
 services:
   backend:
     image: ${NEXUS_PUSH_IMAGE:-vortex.kronshtadt.ru:8443/maas-hosted/maas-backend:latest}
@@ -18,7 +27,10 @@ services:
       BITRIX_WORKER_ENABLED: "true"
     restart: unless-stopped
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -86,9 +98,6 @@ services:
   redis:
     image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:443}/maas-hosted/redis:8.2.3
     container_name: redis
-    # volumes:
-    #   - ./redis-data:/data
-    # command: redis-server --appendonly yes --appendfsync everysec
     command: redis-server --appendonly no --save ""
     restart: unless-stopped
     healthcheck:
@@ -113,6 +122,51 @@ services:
         condition: on-failure
         delay: 5s
         max_attempts: 3
+
+  postgres:
+    image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:443}/maas-hosted/postgres:18
+    container_name: maas-prod-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-maas_backend}
+      POSTGRES_USER: ${POSTGRES_USER:-maas_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-maas_local_pass}
+    volumes:
+      - ./postgres-data-prod:/var/lib/postgresql
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-maas_user} -d ${POSTGRES_DB:-maas_backend}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    networks:
+      - maas-internal
+
+  pgadmin:
+    image: ${NEXUS_PUSH_REGISTRY:-nexus.maas.int.kronshtadt.ru:443}/maas-hosted/dpage/pgadmin4:9
+    container_name: maas-prod-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD:-change-me}
+      PGADMIN_CONFIG_SERVER_MODE: "False"
+      PGADMIN_REPLACE_SERVERS_ON_STARTUP: "True"
+    volumes:
+      - ./config/pgadmin/servers.json:/pgadmin4/servers.json:ro
+      - ./config/pgadmin/pgpass:/pgadmin4/pgpass:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - maas-internal
+      - traefik-global-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=traefik-global-proxy"
+      - "traefik.http.routers.maas-pgadmin.rule=Host(`${PGADMIN_TRAEFIK_HOST:-pgadmin.maas.int.kronshtadt.ru}`)"
+      - "traefik.http.routers.maas-pgadmin.entrypoints=https"
+      - "traefik.http.routers.maas-pgadmin.tls=true"
+      - "traefik.http.services.maas-pgadmin.loadbalancer.server.port=80"
 
 networks:
   maas-internal:

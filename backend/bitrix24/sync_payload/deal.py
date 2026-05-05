@@ -10,7 +10,6 @@ from backend.bitrix24.dto.deal import Deal, DealCreate, DealUpdate
 from backend.bitrix24.repositories import constant_entity_repository as const_repo
 from backend.models import Kit, User
 from backend.bitrix24.repositories.mapping_repository import get_bitrix_id, get_maas_id
-from backend.bitrix24.funnel_cache import resolve_stage_name
 from backend.bitrix24.sync_payload.external_lists import (
     fetch_list_values,
     resolve_location_external_id,
@@ -195,26 +194,18 @@ async def _build_kit_fields_from_deal_userfields(
     return kit_fields
 
 
-async def _build_kit_base_fields_from_deal(db: AsyncSession, deal_data: dict[str, Any]) -> dict[str, Any]:
+async def _build_kit_base_fields_from_deal(deal_data: dict[str, Any]) -> dict[str, Any]:
     """Build common kit fields from deal (kit_name, status, kit_price).
 
-    Important: deal_data['STAGE_ID'] is a technical code (e.g. NEW, C2:NEW).
-    We translate it to a human-readable stage name using the local funnel cache populated on startup.
+    deal_data['STAGE_ID'] is stored as-is (technical code, e.g. NEW, C2:NEW).
     """
     title = deal_data.get("TITLE")
     stage_id = deal_data.get("STAGE_ID")
-    category_id = deal_data.get("CATEGORY_ID")
     opportunity = deal_data.get("OPPORTUNITY")
-
-    stage_name = await resolve_stage_name(
-        db,
-        stage_id=str(stage_id) if stage_id is not None else None,
-        category_id=int(category_id) if category_id is not None else None,
-    )
 
     return {
         "kit_name": title,
-        "status": stage_name or (str(stage_id) if stage_id is not None else None),
+        "status": str(stage_id) if stage_id is not None else None,
         "kit_price": float(opportunity) if opportunity is not None else None,
     }
 
@@ -227,7 +218,7 @@ async def deal_to_kit_update(
     """
     deal_data = deal.to_dict()
     list_values = await fetch_list_values()
-    base_fields = await _build_kit_base_fields_from_deal(db, deal_data)
+    base_fields = await _build_kit_base_fields_from_deal(deal_data)
     userfield_fields = await _build_kit_fields_from_deal_userfields(
         db, deal_data, list_values
     )

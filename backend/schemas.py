@@ -863,59 +863,62 @@ class CallRequestResponse(BaseModel):
 # JSON Request Schemas (Form to JSON Conversion)
 # ============================================================================
 
-# Calculation request schema (replaces Form parameters)
-# Note: Validation is minimal to allow calculator service to handle detailed validation
-# Calculator accepts either file_data OR dimensions to trigger different algorithms
+# Calculation request schema
+# Accepts one of three file input modes:
+#   1. file_id  — reference to a previously uploaded file in the database
+#   2. file_name + file_type + file_data  — inline base64 file for anonymous users
+#   3. (none)   — manual dimensions via length / width / height
 class CalculationRequest(BaseModel):
-    service_id: str  # Only required field - must identify which calculator to use
+    service_id: str
+    # -- file input mode 1: DB reference --
     file_id: Optional[int] = None
-    quantity: Optional[int] = None  # Made optional - calculator can handle missing
+    # -- file input mode 2: inline base64 (no DB record required) --
+    file_name: Optional[str] = None
+    file_type: Optional[str] = None  # e.g. "stl", "stp", "step"
+    file_data: Optional[str] = None  # base64-encoded file content
+    # -- calculation parameters --
+    quantity: Optional[int] = None
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: Optional[str] = None  # Made optional - calculator can handle missing
-    material_form: Optional[str] = "rod"  # Make optional
+    material_id: Optional[str] = None
+    material_form: Optional[str] = "rod"
     special_instructions: Optional[str] = None
-    tolerance_id: Optional[str] = "1"  # Make optional
-    finish_id: Optional[str] = "1"  # Make optional
-    cover_id: Optional[List[str]] = None  # Make optional
-    k_otk: Optional[str] = "1.0"  # Make optional
-    k_cert: Optional[List[str]] = ["a", "f"]  # Make optional
-    document_ids: Optional[List[int]] = None  # Document IDs for calculation context
+    tolerance_id: Optional[str] = "1"
+    finish_id: Optional[str] = "1"
+    cover_id: Optional[List[str]] = None
+    k_otk: Optional[str] = "1.0"
+    k_cert: Optional[List[str]] = ["a", "f"]
+    document_ids: Optional[List[int]] = None
     location: Optional[str] = None
-    
+
     @validator('service_id')
     def validate_service_id(cls, v):
         if not v or len(v.strip()) == 0:
             raise ValueError('service_id cannot be empty')
-        
-        # Note: Service ID validation is handled by the calculator service
-        # We only validate that it's not empty here
         return v.strip()
-    
-    # @validator('quantity')
-    # def validate_quantity(cls, v):
-    #     if v is None:
-    #         raise ValueError('quantity is required')
-    #     if not isinstance(v, int):
-    #         raise ValueError('quantity must be an integer')
-    #     if v <= 0:
-    #         raise ValueError('quantity must be greater than 0')
-    #     return v
-    
-    # @validator('material_id')
-    # def validate_material_id(cls, v):
-    #     if not v or len(v.strip()) == 0:
-    #         raise ValueError('material_id cannot be empty')
-    #     return v.strip()
-    
+
+    @model_validator(mode='after')
+    def validate_file_input(self):
+        has_file_id = self.file_id is not None
+        has_inline = self.file_data is not None or self.file_name is not None or self.file_type is not None
+
+        if has_file_id and has_inline:
+            raise ValueError('Provide either file_id or inline file fields (file_name, file_type, file_data), not both')
+
+        if has_inline:
+            missing = [f for f, v in [('file_name', self.file_name), ('file_type', self.file_type), ('file_data', self.file_data)] if not v]
+            if missing:
+                raise ValueError(f'Inline file upload requires all three fields; missing: {", ".join(missing)}')
+
+        return self
+
     @validator('cover_id')
     def validate_cover_id(cls, v):
         if v is None:
             return []
         if not isinstance(v, list):
             raise ValueError('cover_id must be a list or None')
-        # Ensure all items in the list are strings
         for item in v:
             if not isinstance(item, str):
                 raise ValueError('cover_id must contain only strings')
@@ -1087,6 +1090,8 @@ class KitOut(BaseModel):
     total_kit_price: float | None = None
     delivery_price: float | None = None
     status: str
+    status_name: Optional[str] = None
+    status_color: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     location: Optional[str] = None

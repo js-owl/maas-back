@@ -60,6 +60,7 @@ coverage.xml
 data/**
 postgres-data/
 postgres-data-dev/
+postgres-data-prod/
 !shop.db
 !data/shop.db
 *.db-journal

@@ -1,5 +1,13 @@
 # GitLab CI/CD Pipeline for MAAS Backend API
 # Dual pipeline: production (v* tags) and development (dev-v* tags) deployments
+#
+# Nexus registries (two roles):
+# - NEXUS_BUILD_REGISTRY — CI runners pull base and maas-proxy images; build:production mirrors Redis/Postgres/pgAdmin
+#   into maas-hosted on NEXUS_PUSH_REGISTRY so the production host (push-registry only) can pull everything.
+# - NEXUS_PUSH_REGISTRY — maas-hosted/maas-backend:<tag> and mirrored infra images. deploy:production uses only
+#   NEXUS_PUSH_* docker login on the server; no build-registry access required on prod.
+#
+# See docker-compose.prod.yml / docker-compose.dev.yml headers for image mapping.
 
 variables:
   DOCKER_DRIVER: overlay2
@@ -51,6 +59,27 @@ build:production:
       else
         echo "⚠️ Could not pull Redis image, will skip pushing"
       fi
+    # Mirror Postgres and pgAdmin to push registry (prod server pulls push only)
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 2>/dev/null; then
+        echo "✅ Pulled Postgres from build maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 ${NEXUS_PUSH_REGISTRY}/maas-hosted/postgres:18
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/postgres:18 2>/dev/null; then
+        echo "✅ Pulled Postgres from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/postgres:18 ${NEXUS_PUSH_REGISTRY}/maas-hosted/postgres:18
+      else
+        echo "⚠️ Could not pull Postgres image for mirror"
+      fi
+    - |
+      if docker pull ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 2>/dev/null; then
+        echo "✅ Pulled pgAdmin from build maas-hosted"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 ${NEXUS_PUSH_REGISTRY}/maas-hosted/dpage/pgadmin4:9
+      elif docker pull ${NEXUS_BUILD_REGISTRY}/maas-proxy/dpage/pgadmin4:9 2>/dev/null; then
+        echo "✅ Pulled pgAdmin from maas-proxy (fallback)"
+        docker tag ${NEXUS_BUILD_REGISTRY}/maas-proxy/dpage/pgadmin4:9 ${NEXUS_PUSH_REGISTRY}/maas-hosted/dpage/pgadmin4:9
+      else
+        echo "⚠️ Could not pull pgAdmin image for mirror"
+      fi
   script:
     # Build image with private registry credentials and cache
     - |
@@ -69,11 +98,15 @@ build:production:
     # Push both tags to Nexus push registry
     - docker push $PROD_PUSH_IMAGE:${CI_COMMIT_TAG}
     - docker push $PROD_PUSH_IMAGE:latest
-    # Push Redis image to push registry
+    # Push Redis / Postgres / pgAdmin mirrored images to push registry
     - docker push ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || true
+    - docker push ${NEXUS_PUSH_REGISTRY}/maas-hosted/postgres:18 || true
+    - docker push ${NEXUS_PUSH_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
     # Clean up local images
     - docker rmi $PROD_PUSH_IMAGE:${CI_COMMIT_TAG} $PROD_PUSH_IMAGE:latest || true
     - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || true
+    - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/postgres:18 || true
+    - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
   only:
     - /^v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -178,8 +211,10 @@ deploy:production:
     - ssh-keyscan -p $SSH_PORT $SSH_HOST >> ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
   script:
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "mkdir -p ${REMOTE_PROJECT_PATH}/config/pgadmin"
     - scp -P $SSH_PORT docker-compose.prod.yml $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/
     - scp -P $SSH_PORT .env.production $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/.env
+    - scp -P $SSH_PORT config/pgadmin/servers.json $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/config/pgadmin/servers.json
     # Deploy to remote server
     - |
       ssh -p $SSH_PORT $SSH_USER@$SSH_HOST << EOF
@@ -203,31 +238,50 @@ deploy:production:
         cd ${REMOTE_PROJECT_PATH}
         echo "✅ Changed to project directory: ${REMOTE_PROJECT_PATH}"
         
-        # Write compose interpolation variables (.env used by docker-compose)
-        echo "🔧 Writing compose .env variables..."
+        # Write compose interpolation variables (.env used by docker-compose; scp placed .env.production as .env)
+        echo "🔧 Appending CI compose overrides to .env..."
         if [ -n "${TRAEFIK_HOST}" ]; then
           echo "TRAEFIK_HOST=${TRAEFIK_HOST}" >> .env
-        else
-          # Ensure .env exists to avoid surprises; leave empty so defaults in compose apply
-          touch .env
+        fi
+        if [ -n "${PGADMIN_TRAEFIK_HOST}" ]; then
+          echo "PGADMIN_TRAEFIK_HOST=${PGADMIN_TRAEFIK_HOST}" >> .env
         fi
         echo "✅ Compose .env prepared"
         
-        # Login to Nexus push registry
-        echo "🔐 Logging into Nexus registry..."
+        # pgAdmin pgpass from POSTGRES_* in .env (must match DATABASE_URL password)
+        mkdir -p config/pgadmin
+        POSTGRES_USER_ENV=\$(awk '/^[[:space:]]*POSTGRES_USER[[:space:]]*=/ {v=\$0; sub(/^[^=]*=/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); gsub(/^["'"'"']|["'"'"']$/, "", v); print v; exit}' .env)
+        POSTGRES_PASSWORD_ENV=\$(awk '/^[[:space:]]*POSTGRES_PASSWORD[[:space:]]*=/ {v=\$0; sub(/^[^=]*=/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); gsub(/^["'"'"']|["'"'"']$/, "", v); print v; exit}' .env)
+        DATABASE_URL_ENV=\$(awk '/^[[:space:]]*DATABASE_URL[[:space:]]*=/ {v=\$0; sub(/^[^=]*=/, "", v); gsub(/^[[:space:]]+|[[:space:]]+$/, "", v); gsub(/^["'"'"']|["'"'"']$/, "", v); print v; exit}' .env)
+        if [ -z "\$POSTGRES_USER_ENV" ] && [ -n "\$DATABASE_URL_ENV" ]; then
+          POSTGRES_USER_ENV=\$(printf '%s' "\$DATABASE_URL_ENV" | sed -n 's#.*://\([^:/@?]*\):\([^@?]*\)@.*#\1#p')
+        fi
+        if [ -z "\$POSTGRES_PASSWORD_ENV" ] && [ -n "\$DATABASE_URL_ENV" ]; then
+          POSTGRES_PASSWORD_ENV=\$(printf '%s' "\$DATABASE_URL_ENV" | sed -n 's#.*://\([^:/@?]*\):\([^@?]*\)@.*#\2#p')
+        fi
+        if [ -z "\$POSTGRES_USER_ENV" ]; then
+          POSTGRES_USER_ENV="maas_user"
+        fi
+        if [ -z "\$POSTGRES_PASSWORD_ENV" ]; then
+          echo "❌ POSTGRES_PASSWORD missing in .env and could not parse from DATABASE_URL; cannot write config/pgadmin/pgpass"
+          exit 1
+        fi
+        printf "postgres:5432:*:%s:%s\n" "\$POSTGRES_USER_ENV" "\$POSTGRES_PASSWORD_ENV" > config/pgadmin/pgpass
+        chmod 600 config/pgadmin/pgpass
+        echo "✅ pgAdmin pgpass written"
+        
+        # Login to Nexus push registry only (prod host has no build-registry access)
+        echo "🔐 Logging into Nexus push registry..."
         echo ${NEXUS_PUSH_PASSWORD} | docker login -u ${NEXUS_PUSH_USER} --password-stdin ${NEXUS_PUSH_REGISTRY}
-        echo "✅ Successfully logged into Nexus registry"
+        echo "✅ Successfully logged into Nexus push registry"
         
-        # Create redis-data directory and set ownership
-        echo "📁 Creating redis-data directory..."
+        # Host bind-mount dirs (match docker-compose.prod.yml)
+        echo "📁 Creating redis-data and postgres-data-prod directories..."
         sudo mkdir -p ${REMOTE_PROJECT_PATH}/redis-data
+        sudo mkdir -p ${REMOTE_PROJECT_PATH}/postgres-data-prod
         sudo chown -R ${SSH_USER}:${SSH_USER} ${REMOTE_PROJECT_PATH}/redis-data
-        echo "✅ Created and configured redis-data directory"
-        
-        # Pull Redis image before backend
-        echo "📥 Pulling Redis image..."
-        sudo docker pull ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || echo "⚠️ Could not pull Redis image"
-        echo "✅ Redis image pull completed"
+        sudo chown -R ${SSH_USER}:${SSH_USER} ${REMOTE_PROJECT_PATH}/postgres-data-prod
+        echo "✅ Host data directories ready"
         
         # Update docker-compose.prod.yml image tag
         echo "🔄 Updating docker-compose.prod.yml with new image tag..."
@@ -254,10 +308,10 @@ deploy:production:
         sleep 10
         
         # Check container status
-        if docker compose -f docker-compose.prod.yml ps | grep -q "Up"; then
-          echo "✅ Container is running"
+        if sudo docker compose -f docker-compose.prod.yml ps | grep -q "Up"; then
+          echo "✅ At least one service is Up"
         else
-          echo "❌ Container is not running"
+          echo "❌ No container is running"
           sudo docker compose -f docker-compose.prod.yml logs
           exit 1
         fi

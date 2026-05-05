@@ -5,6 +5,39 @@ from sqlalchemy import select
 from backend import models, schemas
 from backend.kits import repository as kits_repo
 
+
+# MaaS-internal statuses not present in bitrix_status.
+# Each entry: status_id -> (display name, color).
+_STATIC_STATUS_INFO: dict[str, tuple[str, str]] = {
+    "AWAITING_CONFIRMATION": ("Подтвердите заказ", "808080"),
+}
+
+
+async def _attach_status_info(db: AsyncSession, kits: list) -> None:
+    """Attach status_name and status_color from bitrix_status to each Kit instance.
+
+    Matches kits.status against bitrix_status.status_id (no other columns compared).
+    MaaS-internal statuses absent from bitrix_status fall back to _STATIC_STATUS_INFO.
+    """
+    stage_ids = {k.status for k in kits if k.status}
+    if not stage_ids:
+        for k in kits:
+            k.status_name = None
+            k.status_color = None
+        return
+    res = await db.execute(
+        select(
+            models.BitrixStatus.status_id,
+            models.BitrixStatus.name,
+            models.BitrixStatus.color,
+        ).where(models.BitrixStatus.status_id.in_(stage_ids))
+    )
+    status_map = {row.status_id: (row.name, row.color) for row in res}
+    for k in kits:
+        name, color = status_map.get(k.status) or _STATIC_STATUS_INFO.get(k.status, (None, None))
+        k.status_name = name
+        k.status_color = color
+
 async def _parse_order_ids(value) -> List[int]:
     if value is None:
         return []
@@ -65,6 +98,7 @@ async def create_kit_from_orders(
     
     # recalc prices
     kit = await kits_repo.recalc_kit_prices(db, kit.kit_id)
+    await _attach_status_info(db, [kit])
 
     return kit
 
@@ -101,6 +135,7 @@ async def add_order_to_kit(
         kit = await kits_repo.update_kit_order_ids(db, kit, ids)
     
     kit = await kits_repo.recalc_kit_prices(db, kit_id)
+    await _attach_status_info(db, [kit])
     return kit
 
 async def get_kit(
@@ -116,18 +151,24 @@ async def get_kit(
         raise ValueError("Access denied")
     
     kit = await kits_repo.recalc_kit_prices(db, kit_id)
+    await _attach_status_info(db, [kit])
 
     return kit
 
 async def list_my_kits(db: AsyncSession, *, current_user: models.User) -> List[models.Kit]:
     if current_user.is_admin:
-        return await kits_repo.get_all_kits(db)
-    return await kits_repo.list_kits_by_user(db, current_user.id)
+        kits = await kits_repo.get_all_kits(db)
+    else:
+        kits = await kits_repo.list_kits_by_user(db, current_user.id)
+    await _attach_status_info(db, kits)
+    return kits
 
 async def list_all_kits(db: AsyncSession, *, current_user: models.User) -> List[models.Kit]:
     if not current_user.is_admin:
         raise ValueError("Access denied")
-    return await kits_repo.get_all_kits(db)
+    kits = await kits_repo.get_all_kits(db)
+    await _attach_status_info(db, kits)
+    return kits
 
 async def remove_order_from_kits(
     db: AsyncSession,
@@ -197,6 +238,7 @@ async def update_kit(
         order_ids=order_ids,
     )
     kit = await kits_repo.recalc_kit_prices(db, kit.kit_id)
+    await _attach_status_info(db, [kit])
     return kit
 
 

@@ -1,5 +1,7 @@
+import json
 from fastapi import APIRouter, Depends, HTTPException
 from redis.asyncio import Redis
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from backend.core.dependencies import get_request_db as get_db
@@ -98,10 +100,19 @@ async def confirm_kit_endpoint(
     if not BITRIX_ENABLED:
         return kit
 
-    if not kit.orders:
+    try:
+        order_ids = json.loads(kit.order_ids or "[]")
+    except (TypeError, ValueError):
+        order_ids = []
+    if not order_ids:
         raise HTTPException(status_code=400, detail="Kit has no orders to confirm")
 
-    for order in kit.orders:
+    res = await db.execute(select(models.Order).where(models.Order.order_id.in_(order_ids)))
+    orders = res.scalars().all()
+    if not orders:
+        raise HTTPException(status_code=400, detail="Kit has no orders to confirm")
+
+    for order in orders:
         try:
             bitrix_product_id = await get_bitrix_id(db, order.order_id, "product")
             if bitrix_product_id is None:

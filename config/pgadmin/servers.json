@@ -1,7 +1,7 @@
 {
   "Servers": {
     "1": {
-      "Name": "Postgres (local)",
+      "Name": "Postgres (Docker)",
       "Group": "Servers",
       "Host": "postgres",
       "Port": 5432,
