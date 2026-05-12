@@ -39,6 +39,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         length=order.length,
         width=order.width,
         height=order.height,
+        location=order.location,
         material_id=order.material_id,
         material_form=order.material_form,
         special_instructions=order.special_instructions,
@@ -63,6 +64,7 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         suitable_machines=json.dumps(calc.get('suitable_machines')) if calc and calc.get('suitable_machines') is not None else None,
         # Store total_price_breakdown even if it's an empty dict/list; only skip when key is absent
         total_price_breakdown=json.dumps(calc_total_price_breakdown) if calc_total_price_breakdown is not None else None,
+        detail_price_calculation=json.dumps(calc.get('detail_price_calculation')) if calc.get('detail_price_calculation') is not None else None,
         # Calculation type information
         calculation_type=calc.get('calculation_type') if calc else None,
         ml_model=calc.get('ml_model') if calc else None,
@@ -107,12 +109,22 @@ async def update_order_calc_fields(db: AsyncSession, order_id: int, calc: dict) 
             if total_price_breakdown_val is not None
             else None
         )
+
+    if 'detail_price_calculation' in calc:
+        detail_price_calculation_val = calc.get('detail_price_calculation')
+        order.detail_price_calculation = (
+            json.dumps(detail_price_calculation_val)
+            if detail_price_calculation_val is not None
+            else None
+        )
     # Update calculation type information
     order.calculation_type = calc.get('calculation_type')
     order.ml_model = calc.get('ml_model')
     order.calculation_time = calc.get('calculation_time')
     order.total_calculation_time = calc.get('total_calculation_time')
     extracted_dimensions = calc.get("extracted_dimensions", {})
+    if extracted_dimensions is None:
+        extracted_dimensions = {}
     order.length = round(extracted_dimensions.get("length", 0), 0)
     order.width = round(extracted_dimensions.get("width", 0), 0)
     order.height = round(extracted_dimensions.get("height", 0), 0)
@@ -180,6 +192,9 @@ async def update_order(db: AsyncSession, order_id: int, order_update: schemas.Or
                 setattr(order, field, value)
         # total_price_breakdown is stored as Text (JSON string)
         elif field == 'total_price_breakdown' and value is not None:
+            setattr(order, field, json.dumps(value) if isinstance(value, dict) else value)
+        # detail_price_calculation is stored as Text (JSON string)
+        elif field == 'detail_price_calculation' and value is not None:
             setattr(order, field, json.dumps(value) if isinstance(value, dict) else value)
         # cover_id and k_cert are JSON columns - SQLAlchemy handles Python lists automatically
         # But ensure they're proper Python objects (lists) for JSON columns

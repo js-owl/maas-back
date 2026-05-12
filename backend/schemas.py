@@ -352,6 +352,7 @@ class OrderUpdate(BaseModel):
     location: Optional[str] = None
     # Reverse sync from Bitrix product properties
     total_price_breakdown: Optional[Dict[str, Any]] = None
+    detail_price_calculation: Optional[Dict[str, Any]] = None
     mat_volume: Optional[float] = None
     mat_weight: Optional[float] = None
     manufacturing_cycle: Optional[float] = None
@@ -442,6 +443,7 @@ class OrderOut(BaseModel):
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
     total_price_breakdown: Optional[Dict[str, Any]]
+    detail_price_calculation: Optional[Dict[str, Any]] = None
     status: str
     front_status: Optional[str] = None
     # Calculation coefficients
@@ -544,6 +546,27 @@ class OrderOut(BaseModel):
     
     @validator('total_price_breakdown', pre=True)
     def parse_total_price_breakdown(cls, v):
+        if v is None:
+            return None
+        if isinstance(v, str):
+            try:
+                import json
+                parsed = json.loads(v)
+                # Ensure it's a dictionary, not a list or other type
+                if isinstance(parsed, dict):
+                    return parsed
+                else:
+                    # If it's not a dict, return None or wrap it
+                    return None
+            except (json.JSONDecodeError, ValueError, TypeError):
+                return None
+        # If it's already a dict, return as-is
+        if isinstance(v, dict):
+            return v
+        return None
+    
+    @validator('detail_price_calculation', pre=True)
+    def parse_detail_price_calculation(cls, v):
         if v is None:
             return None
         if isinstance(v, str):

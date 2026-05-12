@@ -16,7 +16,7 @@ async def proxy_request(
     method: str = "GET",
     timeout: float = 10.0,
     request: Request = None,
-    json_data: dict = None
+    json_data: dict = None,
 ) -> Dict[str, Any]:
     """Generic proxy function for GET/POST/PUT/DELETE requests to calculator service"""
     if not CALCULATOR_BASE_URL:
@@ -37,7 +37,7 @@ async def proxy_request(
             method_upper = method.upper()
             
             if method_upper == "GET":
-                resp = await client.get(url, timeout=timeout, headers=headers)
+                resp = await client.get(url, timeout=timeout, headers=headers, params=json_data)
             elif method_upper == "POST":
                 resp = await client.post(url, timeout=timeout, headers=headers, json=json_data)
             elif method_upper == "PUT":
@@ -78,9 +78,14 @@ async def proxy_request(
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-async def proxy_get_request(endpoint: str, timeout: float = 10.0, request: Request = None) -> Dict[str, Any]:
+async def proxy_get_request(
+    endpoint: str, 
+    timeout: float = 10.0, 
+    request: Request = None,
+    json_data: dict = None
+) -> Dict[str, Any]:
     """Convenience wrapper for GET requests"""
-    return await proxy_request(endpoint, method="GET", timeout=timeout, request=request)
+    return await proxy_request(endpoint, method="GET", timeout=timeout, request=request, json_data=json_data)
 
 
 async def proxy_post_request(
@@ -172,4 +177,16 @@ async def get_locations(request: Request = None) -> Dict[str, List[Dict[str, Any
     # 7000 server v3.1.0 returns {"locations": [...]}
     if isinstance(response, dict) and "locations" in response:
         return {"locations": response["locations"]}
+    return response
+
+
+async def get_operations_available(service_id: str, request: Request = None) -> Dict[str, List[Dict[str, Any]]]:
+    """
+    Get available operations for different services 
+    to view on pages from calculator service
+    """
+    response = await proxy_get_request("operations_available", request=request, json_data={"service_id": service_id})
+    # 7000 server v3.1.0 returns {"values": [...]}
+    if isinstance(response, dict) and "values" in response:
+        return {"values": response["values"]}
     return response

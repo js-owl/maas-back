@@ -73,6 +73,7 @@ async def create_order_with_calculation(
             file_data=file_data,
             file_name=file_name,
             file_type=file_type,
+            location=order_data.location,
             document_ids=order_data.document_ids
         )
         
@@ -151,6 +152,7 @@ async def create_order_with_dimensions(
             k_otk=order_data.k_otk,
             k_cert=order_data.k_cert,
             timeout=10.0,
+            location=order_data.location,
             document_ids=order_data.document_ids
             # No file_data, file_name, file_type for dimensions-only
         )
@@ -294,9 +296,6 @@ async def recalculate_order_price(db: AsyncSession, order: models.Order) -> bool
             material_id=order.material_id,
             material_form=order.material_form,
             quantity=order.quantity,
-            length=order.length,
-            width=order.width,
-            height=order.height,
             tolerance_id=order.tolerance_id,
             finish_id=order.finish_id,
             cover_id=order.cover_id,
@@ -305,7 +304,8 @@ async def recalculate_order_price(db: AsyncSession, order: models.Order) -> bool
             timeout=10.0,
             file_data=file_data,
             file_name=file_name,
-            file_type=file_type
+            file_type=file_type,
+            location=order.location
         )
         
         # End timing calculator service call

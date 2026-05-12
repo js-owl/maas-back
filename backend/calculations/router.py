@@ -13,7 +13,7 @@ from backend import models, schemas
 from backend.core.dependencies import get_db
 from backend.auth.service import decode_access_token
 from backend.calculations.service import call_calculator_service
-from backend.calculations.proxy import get_services, get_other_services, get_materials, get_coefficients, get_locations
+from backend.calculations.proxy import get_services, get_other_services, get_materials, get_coefficients, get_locations, get_operations_available
 from backend.utils.logging import get_logger
 from sqlalchemy import select
 
@@ -44,6 +44,11 @@ async def coefficients_options():
 
 @router.options('/locations', tags=["Calculation"])
 async def locations_options():
+    """Handle CORS preflight requests for locations"""
+    return Response(status_code=200)
+
+@router.options('/operations_available', tags=["Calculation"])
+async def operations_available_options():
     """Handle CORS preflight requests for locations"""
     return Response(status_code=200)
 
@@ -302,7 +307,8 @@ async def calculate_price(
         "total_time": data.get("total_time", 0),
         "manufacturing_cycle": float(data.get("manufacturing_cycle") or 0),  # Optional field from calculator service, default to 0.0 if null
         "suitable_machines": data.get("suitable_machines"),  # Suitable manufacturing machines from calculator service
-        "total_price_breakdown": data.get("total_price_breakdown"),  # Suitable manufacturing machines from calculator service
+        "total_price_breakdown": data.get("total_price_breakdown"),
+        "detail_price_calculation": data.get("detail_price_calculation"),
         "calculation_type": calculation_type,  # "ml_based", "rule_based", or "unknown"
         "ml_model": data.get("ml_model"),  # ML model name if available
         "calculation_engine": data.get("calculation_engine"),  # Original calculation engine from calculator service
@@ -349,3 +355,9 @@ async def get_calculator_coefficients(request: Request):
 async def get_calculator_locations(request: Request):
     """Proxy endpoint to get available locations from calculator service"""
     return await get_locations(request)
+
+
+@router.get('/operations_available', tags=["Calculator"])
+async def get_calculator_operations_available(request: Request, service_id: str):
+    """Proxy endpoint to get available locations from calculator service"""
+    return await get_operations_available(service_id=service_id, request=request)

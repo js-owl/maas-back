@@ -121,6 +121,7 @@ class Order(Base):
     created_at = Column(DateTime, default=utcnow)
     detail_price = Column(Float, nullable=True)
     detail_price_one = Column(Float, nullable=True)
+    detail_price_calculation = Column(Text, nullable=True) # JSON 
     detail_time = Column(Float, nullable=True)
     document_ids = Column(Text, nullable=True)
     file_id = Column(Integer, ForeignKey('files.id'))
@@ -133,6 +134,7 @@ class Order(Base):
     k_quantity = Column(Float, nullable=True)
     kit_id = Column(Integer, ForeignKey("kits.kit_id"), nullable=True, index=True)
     length = Column(Integer, nullable=True)
+    location = Column(Text, nullable=True)
     manufacturing_cycle = Column(Float, nullable=True)
     mat_price = Column(Float, nullable=True)
     mat_volume = Column(Float, nullable=True)

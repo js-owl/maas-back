@@ -194,6 +194,38 @@ async def update_kit_endpoint(
             order_ids=payload.order_ids,
         )
         if BITRIX_ENABLED:
+            if payload.location is not None:
+                try:
+                    order_ids = json.loads(kit.order_ids or "[]")
+                except (TypeError, ValueError):
+                    order_ids = []
+
+                if order_ids:
+                    res = await db.execute(
+                        select(models.Order).where(models.Order.order_id.in_(order_ids))
+                    )
+                    orders = res.scalars().all()
+                    for order in orders:
+                        try:
+                            bitrix_product_id = await get_bitrix_id(db, order.order_id, "product")
+                            if bitrix_product_id is None:
+                                continue
+                            product_dto = await order_to_product_update(db, order)
+                            await enqueue_operation(
+                                entity_type="product",
+                                action="update",
+                                payload=product_dto.model_dump(exclude_none=True),
+                                local_id=order.order_id,
+                                external_id=bitrix_product_id,
+                                redis=redis,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to enqueue Bitrix24 product update for order %s after kit %s location update",
+                                order.order_id,
+                                kit_id,
+                            )
+
             bitrix_deal_id = await get_bitrix_id(db, kit_id, "deal")
             if bitrix_deal_id is not None:
                 try:

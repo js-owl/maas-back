@@ -51,6 +51,37 @@ async def _parse_order_ids(value) -> List[int]:
         return [int(x) for x in value]
     return []
 
+
+async def _recalculate_kit_orders_for_location(
+    db: AsyncSession,
+    *,
+    kit: models.Kit,
+) -> None:
+    """Persist kit.location on all kit orders and recalculate their prices."""
+    order_ids = await _parse_order_ids(kit.order_ids)
+    if not order_ids:
+        return
+
+    res = await db.execute(
+        select(models.Order).where(models.Order.order_id.in_(order_ids))
+    )
+    orders = res.scalars().all()
+    if not orders:
+        return
+
+    for order in orders:
+        order.location = kit.location
+        db.add(order)
+    await db.commit()
+
+    from backend.orders.service import recalculate_order_price
+
+    for order in orders:
+        success = await recalculate_order_price(db, order)
+        if not success:
+            raise ValueError(f"Failed to recalculate price for order {order.order_id}")
+
+
 async def create_kit_from_orders(
     db: AsyncSession,
     *,
@@ -237,6 +268,10 @@ async def update_kit(
         location=location,
         order_ids=order_ids,
     )
+
+    if location is not None:
+        await _recalculate_kit_orders_for_location(db, kit=kit)
+
     kit = await kits_repo.recalc_kit_prices(db, kit.kit_id)
     await _attach_status_info(db, [kit])
     return kit
