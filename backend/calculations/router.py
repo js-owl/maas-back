@@ -185,19 +185,24 @@ async def calculate_price(
     # Validate material_id against available materials from calculator service
     try:
         materials_response = await get_materials()
+        electroplating_materials_response = await get_operations_available("electroplating") # for electroplating operation put in material_id
         # logger.info(f"Materials response: {materials_response}")
         # Extract materials list from response
         if isinstance(materials_response, dict) and "materials" in materials_response:
             available_materials = [mat.get("id") for mat in materials_response["materials"] if isinstance(mat, dict) and "id" in mat]
         else:
             available_materials = []
-        
-        logger.info(f"Available materials: {available_materials}")
+
+        electroplating_materials_list = electroplating_materials_response.get("values", [])
+        electroplating_materials = [x['id'] for x in electroplating_materials_list]
+
+        available_materials_full = available_materials + electroplating_materials
+        logger.info(f"Available materials: {available_materials_full}")
         logger.info(f"Checking material_id: {material_id}")
         
-        if available_materials and material_id not in available_materials:
-            logger.warning(f"Invalid material_id: {material_id} not in {available_materials}")
-            raise HTTPException(status_code=400, detail=f"Invalid material_id: {material_id}. Available materials: {available_materials}")
+        if available_materials_full and material_id not in available_materials_full:
+            logger.warning(f"Invalid material_id: {material_id} not in {available_materials_full}")
+            raise HTTPException(status_code=400, detail=f"Invalid material_id: {material_id}. Available materials: {available_materials_full}")
         else:
             logger.info(f"Material validation passed for: {material_id}")
     except HTTPException:

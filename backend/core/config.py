@@ -11,7 +11,15 @@ load_dotenv()
 # Core / API
 SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
 ALGORITHM = os.getenv("ALGORITHM", "HS256")
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "15"))
+REFRESH_TOKEN_SECRET = os.getenv("REFRESH_TOKEN_SECRET", f"{SECRET_KEY}-refresh")
+REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
+REFRESH_TOKEN_EXPIRE_MINUTES_SESSION = int(os.getenv("REFRESH_TOKEN_EXPIRE_MINUTES_SESSION", "720"))
+REFRESH_COOKIE_NAME = os.getenv("REFRESH_COOKIE_NAME", "refresh_token")
+REFRESH_COOKIE_PATH = os.getenv("REFRESH_COOKIE_PATH", "/")
+REFRESH_COOKIE_DOMAIN = os.getenv("REFRESH_COOKIE_DOMAIN") or None
+REFRESH_COOKIE_SECURE = os.getenv("REFRESH_COOKIE_SECURE", "true").lower() == "true"
+REFRESH_COOKIE_SAMESITE = os.getenv("REFRESH_COOKIE_SAMESITE", "lax")
 APP_VERSION = os.getenv("APP_VERSION", "3.2.0")
 APP_TITLE = os.getenv("APP_TITLE", "Manufacturing Service API")
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://maas_user:maas_local_pass@localhost:5432/maas_backend")

@@ -91,6 +91,7 @@ class UserCreate(BaseModel):
 class UserLogin(BaseModel):
     username: str
     password: str
+    remember_me: bool = False
 
 class UserUpdate(BaseModel):
     username: Optional[str] = None
@@ -1065,6 +1066,12 @@ class ErrorResponse(BaseModel):
 
 class LoginResponse(BaseModel):
     """Login response format"""
+    access_token: str
+    token_type: str = "bearer"
+    must_change_password: bool = False
+
+class RefreshResponse(BaseModel):
+    """Refresh response format"""
     access_token: str
     token_type: str = "bearer"
     must_change_password: bool = False

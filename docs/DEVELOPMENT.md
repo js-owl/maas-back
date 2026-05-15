@@ -211,17 +211,34 @@ class BitrixSyncQueue(Base):
     "sub": "username",
     "exp": 1234567890,
     "iat": 1234567890,
+    "token_use": "access",
     "is_admin": false
 }
 ```
 
 **Authentication Flow**:
-1. User submits credentials via `/login`
-2. Backend validates credentials against database
-3. JWT token generated with user claims
-4. Token returned to client
-5. Client includes token in `Authorization: Bearer <token>` header
-6. Backend validates token on protected endpoints
+1. User submits JSON credentials via `/login` with optional `remember_me`.
+2. Backend validates credentials against the database using bcrypt verification.
+3. Backend returns a short-lived access JWT in JSON and sets a refresh JWT in an `HttpOnly` cookie.
+4. Client includes the access JWT in `Authorization: Bearer <token>` for protected endpoints.
+5. Browser clients call `/refresh` with `credentials: "include"` when access expires; the backend validates the refresh JWT and Redis session, rotates the refresh token, sets a new cookie, and returns a new access JWT.
+6. Client calls `/logout` with credentials to delete the Redis refresh session and clear the cookie.
+
+**Refresh Token Lifecycle**:
+- Refresh JWTs use a separate signing secret (`REFRESH_TOKEN_SECRET`) and include a unique `jti`.
+- Redis stores refresh sessions at `auth:refresh:{jti}` with a TTL matching the refresh JWT.
+- `remember_me=false` uses a browser session cookie with a configurable server-side cap (`REFRESH_TOKEN_EXPIRE_MINUTES_SESSION`).
+- `remember_me=true` uses a persistent cookie and defaults to 30 days (`REFRESH_TOKEN_EXPIRE_DAYS`).
+- Successful refresh always rotates the refresh token and deletes the old Redis entry.
+
+**Relevant Environment Variables**:
+- `ACCESS_TOKEN_EXPIRE_MINUTES` - access JWT lifetime, default 15.
+- `REFRESH_TOKEN_SECRET` - separate signing key for refresh JWTs.
+- `REFRESH_TOKEN_EXPIRE_DAYS` - remember-me refresh lifetime, default 30.
+- `REFRESH_TOKEN_EXPIRE_MINUTES_SESSION` - non-persistent refresh server cap.
+- `REFRESH_COOKIE_NAME`, `REFRESH_COOKIE_PATH`, `REFRESH_COOKIE_DOMAIN` - refresh cookie identity/scope.
+- `REFRESH_COOKIE_SECURE`, `REFRESH_COOKIE_SAMESITE` - refresh cookie security attributes.
+- `CORS_ORIGINS` must be explicit in production when `CORS_ALLOW_CREDENTIALS=true`.
 
 ### Authorization Levels
 
@@ -245,7 +262,9 @@ class BitrixSyncQueue(Base):
 ### Security Features
 
 - **Password Hashing** - bcrypt with salt
-- **Token Expiration** - Configurable token lifetime
+- **Token Expiration** - Short-lived access JWTs and configurable refresh lifetimes
+- **Refresh Rotation** - Redis-backed refresh tokens are replaced on every refresh
+- **HttpOnly Cookies** - Refresh tokens are not available to browser JavaScript
 - **CORS Protection** - Configurable origin restrictions
 - **Input Validation** - Pydantic schema validation
 - **SQL Injection Prevention** - SQLAlchemy ORM protection

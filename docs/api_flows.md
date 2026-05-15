@@ -31,15 +31,54 @@ sequenceDiagram
     participant A as Auth Router
     participant AS as Auth Service
     participant DB as Database
+    participant R as Redis
     
-    C->>A: POST /login
+    C->>A: POST /login (username, password, remember_me)
     A->>AS: authenticate_user()
     AS->>DB: SELECT user by username
     DB-->>AS: user_data
     AS->>AS: verify_password()
     AS->>AS: create_access_token()
-    AS-->>A: token + user_info
-    A-->>C: 200 OK + JWT token
+    AS->>AS: create_refresh_token(jti)
+    AS->>R: SET auth:refresh:{jti} with TTL
+    AS-->>A: access token + refresh token
+    A-->>C: 200 OK + access token body + HttpOnly refresh cookie
+```
+
+### Access Token Refresh
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Auth Router
+    participant AS as Auth Service
+    participant R as Redis
+    participant DB as Database
+
+    C->>A: POST /refresh (refresh cookie only)
+    A->>AS: decode_refresh_token()
+    AS->>R: GET auth:refresh:{old_jti}
+    R-->>AS: username
+    AS->>R: DEL auth:refresh:{old_jti}
+    AS->>DB: SELECT active user
+    DB-->>AS: user_data
+    AS->>AS: create_access_token()
+    AS->>AS: create_refresh_token(new_jti)
+    AS->>R: SET auth:refresh:{new_jti} with TTL
+    A-->>C: 200 OK + new access token body + new HttpOnly refresh cookie
+```
+
+### User Logout
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant A as Auth Router
+    participant AS as Auth Service
+    participant R as Redis
+
+    C->>A: POST /logout (credentials included)
+    A->>AS: decode_refresh_token() if cookie present
+    AS->>R: DEL auth:refresh:{jti}
+    A-->>C: 200 OK + clear refresh cookie
 ```
 
 ## 2. File Upload Flow
