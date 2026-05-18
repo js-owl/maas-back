@@ -120,12 +120,31 @@ async def get_file_download_path(file_record: models.FileStorage) -> Optional[Pa
 async def get_file_preview_path(db: AsyncSession, file_id: int) -> Optional[Path]:
     """Get preview image path for a file"""
     preview_path_str = await repo_get_file_preview_path(db, file_id)
-    print('===== service get_file_preview_path', preview_path_str)
     if not preview_path_str:
         return None
+
+    # Convert Windows-style paths to Unix-style and ensure absolute path
+    normalized_path = preview_path_str.replace('\\', '/')
+
+    candidates = []
+
+    path = Path(normalized_path)
+    candidates.append(path)
+
+    if not path.is_absolute():
+        candidates.append(Path("/app") / normalized_path)
     
-    preview_path = Path(preview_path_str)
-    return preview_path if preview_path.exists() else None
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    
+    logger.warning(
+        "Preview file is not found for file_id=%s, preview_path=%s, checked=%s",
+        file_id,
+        preview_path_str,
+        [str(p) for p in candidates]
+    )
+    return None
 
 
 async def regenerate_preview(db: AsyncSession, file_id: int) -> bool:

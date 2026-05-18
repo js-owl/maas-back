@@ -90,26 +90,27 @@ async def create_kit_from_orders(
     quantity: int,
     status: str = "pending",
     location: Optional[str] = None, # DEPRECATED
-    order_ids: List[int],
+    order_ids: Optional[List[int]] = None,
 ) -> models.Kit:
-    order_ids = [int(x) for x in order_ids]
-    if not order_ids:
-        raise ValueError("order_ids must be a non-empty list")
+    order_ids = [int(x) for x in (order_ids or [])]
 
-    # Load orders and validate ownership
-    res = await db.execute(select(models.Order).where(models.Order.order_id.in_(order_ids)))
-    orders = res.scalars().all()
-    found = {o.order_id for o in orders}
-    missing = [oid for oid in order_ids if oid not in found]
-    if missing:
-        raise ValueError(f"Orders not found: {missing}")
+    orders: List[models.Order] = []
+    if order_ids:
+        # Load orders and validate ownership
+        res = await db.execute(select(models.Order).where(models.Order.order_id.in_(order_ids)))
+        orders = res.scalars().all()
+        found = {o.order_id for o in orders}
+        missing = [oid for oid in order_ids if oid not in found]
+        if missing:
+            raise ValueError(f"Orders not found: {missing}")
 
-    if not current_user.is_admin:
-        foreign = [o.order_id for o in orders if o.user_id != current_user.id]
-        if foreign:
-            raise ValueError(f"Orders do not belong to current user: {foreign}")
+        if not current_user.is_admin:
+            foreign = [o.order_id for o in orders if o.user_id != current_user.id]
+            if foreign:
+                raise ValueError(f"Orders do not belong to current user: {foreign}")
 
-    effective_user_id = current_user.id if not current_user.is_admin else orders[0].user_id
+    effective_user_id = current_user.id if not current_user.is_admin or not order_ids else orders[0].user_id
+    
     res_loc = await db.execute(
         select(models.User.location)
         .where(models.User.id == effective_user_id)
@@ -239,23 +240,23 @@ async def update_kit(
     if not current_user.is_admin and kit.user_id != current_user.id:
         raise ValueError("Access denied")
 
-    # Если обновляют order_ids — валидируем существование заказов и владение
+    # Если обновляют order_ids — валидируем существование заказов и владение.
+    # Пустой список допустим: так можем создать/очистить kit без orders.
     if order_ids is not None:
         order_ids = [int(x) for x in order_ids]
-        if not order_ids:
-            raise ValueError("order_ids must be a non-empty list")
 
-        res = await db.execute(select(models.Order).where(models.Order.order_id.in_(order_ids)))
-        orders = res.scalars().all()
-        found = {o.order_id for o in orders}
-        missing = [oid for oid in order_ids if oid not in found]
-        if missing:
-            raise ValueError(f"Orders not found: {missing}")
+        if order_ids:
+            res = await db.execute(select(models.Order).where(models.Order.order_id.in_(order_ids)))
+            orders = res.scalars().all()
+            found = {o.order_id for o in orders}
+            missing = [oid for oid in order_ids if oid not in found]
+            if missing:
+                raise ValueError(f"Orders not found: {missing}")
 
-        if not current_user.is_admin:
-            foreign = [o.order_id for o in orders if o.user_id != current_user.id]
-            if foreign:
-                raise ValueError(f"Orders do not belong to current user: {foreign}")
+            if not current_user.is_admin:
+                foreign = [o.order_id for o in orders if o.user_id != current_user.id]
+                if foreign:
+                    raise ValueError(f"Orders do not belong to current user: {foreign}")
 
     kit = await kits_repo.update_kit(
         db,

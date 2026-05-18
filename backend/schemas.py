@@ -1,4 +1,4 @@
-from pydantic import BaseModel, validator, field_validator, model_validator
+from pydantic import BaseModel, Field, validator, field_validator, model_validator
 from typing import List, Optional, Dict, Any
 from datetime import datetime
 import json
@@ -1091,7 +1091,7 @@ class HealthResponse(BaseModel):
 # Create kit schemas
 class KitCreate(BaseModel):
     kit_name: Optional[str] = None
-    order_ids: List[int]
+    order_ids: Optional[List[int]] = Field(default_factory=list)
     user_id: int
     quantity: int = 1
     status: Optional[str] = "AWAITING_CONFIRMATION"
@@ -1099,8 +1099,6 @@ class KitCreate(BaseModel):
 
     @validator("order_ids")
     def validate_order_ids(cls, v):
-        if not v:
-            raise ValueError("order_ids must be a non-empty list")
         return [int(x) for x in v]
 
     @validator("quantity")

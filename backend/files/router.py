@@ -197,7 +197,7 @@ async def download_file(
 @router.get('/files/{file_id}/preview', tags=["Files", "Preview"])
 async def get_file_preview(
     file_id: int,
-    current_user: models.User = Depends(get_current_user),
+    current_user: models.User = Depends(get_optional_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Get file preview image"""
@@ -205,18 +205,24 @@ async def get_file_preview(
         file_record = await get_file_by_id(db, file_id)
         if not file_record:
             raise HTTPException(status_code=404, detail="File not found")
-        
-        # Check access permissions
-        is_demo = file_record.id in [1, 2, 3, 4, 5] or getattr(file_record, 'is_demo', False)
-        if not is_demo and file_record.uploaded_by != current_user.id and not current_user.is_admin:
-            raise HTTPException(status_code=403, detail="Access denied")
-        
+
+        is_demo = file_record.id in [1, 2, 3, 4, 5] or getattr(file_record, "is_demo", False)
+
+        if not is_demo:
+            if not current_user:
+                raise HTTPException(status_code=401, detail="Authentication required")
+
+            if file_record.uploaded_by != current_user.id and not current_user.is_admin:
+                raise HTTPException(status_code=403, detail="Access denied")
+
         # Get preview path
         preview_path = await get_file_preview_path(db, file_id)
         if not preview_path or not preview_path.exists():
             # Return placeholder if no preview available
             from backend.utils.helpers import generate_placeholder_preview
-            placeholder_data = generate_placeholder_preview(file_record.original_filename or file_record.filename)
+            placeholder_data = generate_placeholder_preview(
+                file_record.original_filename or file_record.filename
+            )
             return StreamingResponse(
                 io.BytesIO(placeholder_data),
                 media_type="image/png",
