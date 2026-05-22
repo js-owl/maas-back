@@ -93,3 +93,6 @@ MYCOMPANY_REQUISITES = {
     "BITRIX_MYCOMPANY_ADDRESS_POSTAL": "101000",
     "BITRIX_MYCOMPANY_ADDRESS_REGION": "Россия",
 }
+
+# Demo file IDs are intentionally stable: frontend may request them without auth.
+DEMO_FILE_IDS = (1, 2, 4)

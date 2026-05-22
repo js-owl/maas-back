@@ -257,12 +257,14 @@ class OrderCreate(BaseModel):
     material_id: str = "alum_D16"  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
     material_form: str = "rod"      # Material form (e.g., "rod", "plate", "sheet", "bar")
     special_instructions: Optional[str] = None
+    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     k_cert: List[str] = ["a", "f"]  # Certification types
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
     location: Optional[str] = None
+    is_need_special_equipment: Optional[bool] = None
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -338,6 +340,7 @@ class OrderUpdate(BaseModel):
     status: Optional[str] = None
     front_status: Optional[str] = None
     special_instructions: Optional[str] = None
+    deadline: Optional[datetime] = None # DEPRECATED
     material_id: Optional[str] = None  # Material ID from calculator service
     material_form: Optional[str] = None  # Material form
     file_id: Optional[int] = None
@@ -348,6 +351,7 @@ class OrderUpdate(BaseModel):
     tolerance_id: Optional[str] = None
     finish_id: Optional[str] = None
     cover_id: Optional[Any] = None  # Accept any type, will be validated and converted to List[str]
+    is_need_special_equipment: Optional[bool] = None
     # Additional documents attached to the order
     document_ids: Optional[List[int]] = None  # List of document IDs to attach to the order
     location: Optional[str] = None
@@ -443,6 +447,7 @@ class OrderOut(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
+    deadline: Optional[datetime] = None # DEPRECATED
     total_price_breakdown: Optional[Dict[str, Any]]
     detail_price_calculation: Optional[Dict[str, Any]] = None
     status: str
@@ -452,6 +457,7 @@ class OrderOut(BaseModel):
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
+    is_need_special_equipment: Optional[bool] = None
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -605,6 +611,7 @@ class OrderOutSimple(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
+    deadline: Optional[datetime] = None # DEPRECATED
     status: str
     # Calculation coefficients
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
@@ -652,6 +659,7 @@ class OrderOutSimple(BaseModel):
     # Bitrix-generated invoices attached to the order
     invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     message: Optional[str] = None
+    is_need_special_equipment: Optional[bool] = None
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -709,6 +717,7 @@ class OrderWithDetails(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
+    deadline: Optional[datetime] = None # DEPRECATED
     status: str
     # Calculation coefficients
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
@@ -759,6 +768,7 @@ class OrderWithDetails(BaseModel):
     file: Optional[FileStorageOut] = None  # File may be None if deleted
     user: UserOut
     message: Optional[str] = None
+    is_need_special_equipment: Optional[bool] = None
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -915,6 +925,7 @@ class CalculationRequest(BaseModel):
     k_cert: Optional[List[str]] = ["a", "f"]
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
+    is_need_special_equipment: Optional[bool] = None
 
     @validator('service_id')
     def validate_service_id(cls, v):
@@ -975,8 +986,10 @@ class OrderCreateRequest(BaseModel):
     material_id: str = "alum_D16"
     material_form: str = "rod"
     special_instructions: Optional[str] = None
+    deadline: Optional[datetime] = None # DEPRECATED
     tolerance_id: str = "1"  # Default value to match OrderCreate
     finish_id: str = "1"  # Default value to match OrderCreate
+    is_need_special_equipment: Optional[bool] = None
     cover_id: List[str] = ["1"]  # Default value to match OrderCreate
     k_otk: str = "1.0"  # Default value to match OrderCreate
     k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
@@ -996,11 +1009,13 @@ class BasketItemIn(BaseModel):
     material_id: str = "alum_D16"
     material_form: str = "rod"
     special_instructions: Optional[str] = None
+    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"
     k_cert: List[str] = ["a", "f"]
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
+    is_need_special_equipment: Optional[bool] = None
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
     file_id: Optional[int] = None
@@ -1017,11 +1032,13 @@ class BasketItemUpdate(BaseModel):
     material_id: Optional[str] = None
     material_form: Optional[str] = None
     special_instructions: Optional[str] = None
+    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: Optional[str] = None
     k_cert: Optional[List[str]] = None
     tolerance_id: Optional[str] = None
     finish_id: Optional[str] = None
     cover_id: Optional[List[str]] = None
+    is_need_special_equipment: Optional[bool] = None
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
     file_id: Optional[int] = None
@@ -1122,6 +1139,7 @@ class KitOut(BaseModel):
     status_color: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+    finished_at: Optional[datetime] = None # TODO
     location: Optional[str] = None
 
     @validator("order_ids", pre=True)
@@ -1159,6 +1177,7 @@ class KitUpdate(BaseModel):
     kit_price: Optional[float] = None  # Reverse sync from Bitrix deal OPPORTUNITY
     delivery_price: Optional[float] = None  # Reverse sync from Bitrix UF_CRM_SHIPPING_COST
     location: Optional[str] = None
+    finished_at: Optional[datetime] = None # TODO
 
 
 class OrderSummaryItem(BaseModel):

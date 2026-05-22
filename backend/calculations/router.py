@@ -150,6 +150,7 @@ async def calculate_price(
     k_otk = request_data.k_otk or "1.0"
     k_cert = request_data.k_cert or ["a", "f"]
     location = request_data.location or "location_1"
+    is_need_special_equipment = request_data.is_need_special_equipment or 0
 
     # Process k_cert to list if passed as JSON string
     if isinstance(k_cert, str):
@@ -239,6 +240,7 @@ async def calculate_price(
             tolerance_id=tolerance_id,
             finish_id=finish_id,
             cover_id=cover_id_for_calculator,
+            is_need_special_equipment=is_need_special_equipment,
             k_otk=k_otk,
             k_cert=k_cert,
             timeout=10.0,

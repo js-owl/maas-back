@@ -26,6 +26,7 @@ async def call_calculator_service(
     tolerance_id: str = "1",
     finish_id: str = "1",
     cover_id: List[str] = ["1"],
+    is_need_special_equipment: Optional[bool] = None,
     k_otk: str = "1.0",
     k_cert: List[str] = None,
     timeout: float = 15.0,
@@ -83,10 +84,17 @@ async def call_calculator_service(
             post_data.update({
                 "document_ids": document_ids
             })
+        
+        # Add if provided
+        if is_need_special_equipment:
+            post_data.update({
+                "is_need_special_equipment": int(is_need_special_equipment)
+            })
 
         # Log outgoing request payload to calculator
-        #logger.info(f"=======================Calculator request payload: {post_data}")
-        
+        # logger.info(f"=======================Calculator request payload: {post_data}")
+        # filtered_request = {k: v for k, v in post_data.items() if k != "file_data"}
+        # logger.info(f"============================= Request: поля: {list(post_data.keys())}, Request data without file_data {filtered_request}")
         # Prepare headers for calculator service call
         headers = {"Content-Type": "application/json"}
         

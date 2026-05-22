@@ -79,9 +79,11 @@ async def create_order(
             material_id=request_data.material_id,
             material_form=request_data.material_form,
             special_instructions=request_data.special_instructions,
+            deadline=request_data.deadline, # DEPRECATED
             tolerance_id=request_data.tolerance_id,
             finish_id=request_data.finish_id,
             cover_id=request_data.cover_id,
+            is_need_special_equipment=request_data.is_need_special_equipment,
             k_otk=request_data.k_otk,
             k_cert=request_data.k_cert,
             location=request_data.location,

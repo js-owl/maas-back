@@ -119,6 +119,7 @@ class Order(Base):
     calculation_type = Column(String, nullable=True)
     cover_id = Column(JSON, default=["1"])
     created_at = Column(DateTime, default=utcnow)
+    deadline = Column(DateTime, default=utcnow) # DEPRECATED
     detail_price = Column(Float, nullable=True)
     detail_price_one = Column(Float, nullable=True)
     detail_price_calculation = Column(Text, nullable=True) # JSON 
@@ -129,6 +130,7 @@ class Order(Base):
     height = Column(Integer, nullable=True)
     invoice_generated_at = Column(DateTime, nullable=True)
     invoice_ids = Column(Text, nullable=True) # JSON: [26, 27, 28] — list of invoice IDs from invoices table
+    is_need_special_equipment = Column(Boolean, nullable=True)
     k_cert = Column(JSON, default=["a", "f"])
     k_otk = Column(String, default="1.0")
     k_quantity = Column(Float, nullable=True)
@@ -200,6 +202,7 @@ class Kit(Base):
     # --- columns (alphabetical) ---
     created_at = Column(DateTime, default=utcnow)
     delivery_price = Column(Float, nullable=True, default=0.0)
+    finished_at = Column(DateTime, nullable=True)
     kit_name = Column(String, nullable=True)
     kit_price = Column(Float, nullable=True, default=0.0)
     location = Column(Text, nullable=True)

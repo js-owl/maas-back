@@ -4,7 +4,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, text
 from backend.models import Base, User, FileStorage
 from backend.auth.service import get_password_hash
-from backend.core.config import ADMIN_DEFAULT_PASSWORD, ADMIN_USERNAME, DATABASE_URL, UPLOAD_DIR
+from backend.core.config import (
+    ADMIN_DEFAULT_PASSWORD, ADMIN_USERNAME, DATABASE_URL, 
+    UPLOAD_DIR, DEMO_FILE_IDS
+)
 from backend.utils.logging import get_logger
 from backend.core.config import ADMIN_LOCATION_OVERRIDES_JSON, DEFAULT_LOCATION
 import asyncio
@@ -15,6 +18,31 @@ import json
 from typing import Dict, Optional
 
 logger = get_logger(__name__)
+
+
+def _resolve_existing_path(path_value: Optional[str]) -> Optional[Path]:
+    """Resolve stored relative/absolute file paths used inside and outside Docker.
+
+    Existing records may contain either relative paths like ``uploads/name.stp``
+    or absolute paths.  Docker deployments usually run from ``/app``, so for
+    relative paths we also check ``/app/<path>``.
+    """
+    if not path_value:
+        return None
+
+    normalized = str(path_value).replace('\\', '/')
+    path = Path(normalized)
+    candidates = [path]
+
+    if not path.is_absolute():
+        candidates.append(Path("/app") / normalized)
+
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+
+    return None
+
 
 engine = create_async_engine(
     DATABASE_URL, echo=False, future=True
@@ -197,6 +225,147 @@ async def ensure_demo_files() -> None:
         except Exception as e:
             logger.info(f"{e}")
             await session.rollback()
+
+
+async def ensure_demo_file_previews() -> None:
+    """Generate missing previews for demo files during service startup.
+
+    A demo file is considered to already have a preview only when the database
+    record points to a preview image that is actually present on disk. This is
+    intentionally stricter than checking ``preview_generated`` alone, because a
+    Docker volume may be recreated while old database rows still reference files
+    that no longer exist.
+    """
+    # Local import avoids pulling the preview HTTP client into database module
+    # initialization and keeps startup seed logic isolated.
+    from backend.files.preview import preview_generator
+
+    generated_count = 0
+    fixed_metadata_count = 0
+    skipped_count = 0
+    failed_count = 0
+
+    async with AsyncSessionLocal() as session:
+        for file_id in DEMO_FILE_IDS:
+            try:
+                file_record = await session.get(FileStorage, file_id)
+                if not file_record:
+                    logger.info("Demo preview startup: file_id=%s is absent, skipped", file_id)
+                    skipped_count += 1
+                    continue
+
+                file_record.is_demo = True
+
+                existing_preview_path = _resolve_existing_path(file_record.preview_path)
+                if existing_preview_path:
+                    # If a preview file exists but flags/filename are stale, fix only DB metadata.
+                    changed = False
+                    if not file_record.preview_generated:
+                        file_record.preview_generated = True
+                        changed = True
+                    if file_record.preview_path != str(existing_preview_path):
+                        file_record.preview_path = str(existing_preview_path)
+                        changed = True
+                    if not file_record.preview_filename:
+                        file_record.preview_filename = existing_preview_path.name
+                        changed = True
+                    if file_record.preview_generation_error:
+                        file_record.preview_generation_error = None
+                        changed = True
+
+                    if changed:
+                        session.add(file_record)
+                        await session.commit()
+                        fixed_metadata_count += 1
+                        logger.info(
+                            "Demo preview startup: fixed preview metadata for file_id=%s path=%s",
+                            file_id,
+                            existing_preview_path,
+                        )
+                    else:
+                        skipped_count += 1
+                        logger.info(
+                            "Demo preview startup: preview already exists for file_id=%s path=%s",
+                            file_id,
+                            existing_preview_path,
+                        )
+                    continue
+
+                model_path = _resolve_existing_path(file_record.file_path)
+                if not model_path:
+                    file_record.preview_generated = False
+                    file_record.preview_generation_error = "Demo source file is not found on disk"
+                    session.add(file_record)
+                    await session.commit()
+                    failed_count += 1
+                    logger.warning(
+                        "Demo preview startup: source model is not found for file_id=%s file_path=%s",
+                        file_id,
+                        file_record.file_path,
+                    )
+                    continue
+
+                logger.info(
+                    "Demo preview startup: generating missing preview for file_id=%s model_path=%s",
+                    file_id,
+                    model_path,
+                )
+                preview_data = await preview_generator.generate_preview(
+                    model_path,
+                    file_record.original_filename or file_record.filename,
+                    fallback_to_placeholder=False,
+                )
+
+                if preview_data:
+                    file_record.preview_filename = preview_data.get("preview_filename")
+                    file_record.preview_path = preview_data.get("preview_path")
+                    file_record.preview_generated = preview_data.get("preview_generated", False)
+                    file_record.preview_generation_error = preview_data.get("preview_generation_error")
+                    session.add(file_record)
+                    await session.commit()
+
+                    if file_record.preview_generated:
+                        generated_count += 1
+                        logger.info(
+                            "Demo preview startup: preview generated for file_id=%s preview_path=%s",
+                            file_id,
+                            file_record.preview_path,
+                        )
+                    else:
+                        failed_count += 1
+                        logger.warning(
+                            "Demo preview startup: preview generation failed for file_id=%s error=%s",
+                            file_id,
+                            file_record.preview_generation_error,
+                        )
+                else:
+                    file_record.preview_generated = False
+                    file_record.preview_generation_error = "Preview generator returned no data"
+                    session.add(file_record)
+                    await session.commit()
+                    failed_count += 1
+                    logger.warning(
+                        "Demo preview startup: preview generator returned no data for file_id=%s",
+                        file_id,
+                    )
+
+            except Exception as e:
+                await session.rollback()
+                failed_count += 1
+                logger.warning(
+                    "Demo preview startup: failed for file_id=%s: %s",
+                    file_id,
+                    e,
+                    exc_info=True,
+                )
+
+    logger.info(
+        "Demo preview startup completed: generated=%s fixed_metadata=%s skipped=%s failed=%s",
+        generated_count,
+        fixed_metadata_count,
+        skipped_count,
+        failed_count,
+    )
 
 
 # ---------------------------------------------------------------------------
