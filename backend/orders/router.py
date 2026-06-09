@@ -84,6 +84,11 @@ async def create_order(
             finish_id=request_data.finish_id,
             cover_id=request_data.cover_id,
             is_need_special_equipment=request_data.is_need_special_equipment,
+            # add for electroplating_auto service
+            electroplating_family=request_data.electroplating_family,
+            electroplating_process_id=request_data.electroplating_process_id,
+            coating_thickness_microns=request_data.coating_thickness_microns,
+            processing_depth_microns=request_data.processing_depth_microns,
             k_otk=request_data.k_otk,
             k_cert=request_data.k_cert,
             location=request_data.location,

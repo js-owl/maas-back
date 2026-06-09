@@ -254,8 +254,8 @@ class OrderCreate(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: str = "alum_D16"  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
-    material_form: str = "rod"      # Material form (e.g., "rod", "plate", "sheet", "bar")
+    material_id: Optional[str] = None  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
+    material_form: Optional[str] = None      # Material form (e.g., "rod", "plate", "sheet", "bar")
     special_instructions: Optional[str] = None
     deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
@@ -265,6 +265,11 @@ class OrderCreate(BaseModel):
     cover_id: List[str] = ["1"]
     location: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -352,6 +357,12 @@ class OrderUpdate(BaseModel):
     finish_id: Optional[str] = None
     cover_id: Optional[Any] = None  # Accept any type, will be validated and converted to List[str]
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
+
     # Additional documents attached to the order
     document_ids: Optional[List[int]] = None  # List of document IDs to attach to the order
     location: Optional[str] = None
@@ -458,6 +469,12 @@ class OrderOut(BaseModel):
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
+
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -660,6 +677,12 @@ class OrderOutSimple(BaseModel):
     invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     message: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
+
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -769,6 +792,12 @@ class OrderWithDetails(BaseModel):
     user: UserOut
     message: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
+
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -916,7 +945,7 @@ class CalculationRequest(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     material_id: Optional[str] = None
-    material_form: Optional[str] = "rod"
+    material_form: Optional[str] = None
     special_instructions: Optional[str] = None
     tolerance_id: Optional[str] = "1"
     finish_id: Optional[str] = "1"
@@ -926,6 +955,11 @@ class CalculationRequest(BaseModel):
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
 
     @validator('service_id')
     def validate_service_id(cls, v):
@@ -983,13 +1017,18 @@ class OrderCreateRequest(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: str = "alum_D16"
-    material_form: str = "rod"
+    material_id: Optional[str] = None
+    material_form: Optional[str] = None
     special_instructions: Optional[str] = None
     deadline: Optional[datetime] = None # DEPRECATED
     tolerance_id: str = "1"  # Default value to match OrderCreate
     finish_id: str = "1"  # Default value to match OrderCreate
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
     cover_id: List[str] = ["1"]  # Default value to match OrderCreate
     k_otk: str = "1.0"  # Default value to match OrderCreate
     k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
@@ -1006,8 +1045,8 @@ class BasketItemIn(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: str = "alum_D16"
-    material_form: str = "rod"
+    material_id: Optional[str] = None
+    material_form: Optional[str] = None
     special_instructions: Optional[str] = None
     deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"
@@ -1016,6 +1055,11 @@ class BasketItemIn(BaseModel):
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
     file_id: Optional[int] = None
@@ -1039,6 +1083,11 @@ class BasketItemUpdate(BaseModel):
     finish_id: Optional[str] = None
     cover_id: Optional[List[str]] = None
     is_need_special_equipment: Optional[bool] = None
+    # add for electroplating_auto service
+    electroplating_family: Optional[str] = None
+    electroplating_process_id: Optional[str] = None
+    coating_thickness_microns: Optional[float] = None
+    processing_depth_microns: Optional[float] = None
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
     file_id: Optional[int] = None

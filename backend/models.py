@@ -117,6 +117,7 @@ class Order(Base):
     # --- columns (alphabetical) ---
     calculation_time = Column(Float, nullable=True)
     calculation_type = Column(String, nullable=True)
+    coating_thickness_microns = Column(Float, nullable=True)
     cover_id = Column(JSON, default=["1"])
     created_at = Column(DateTime, default=utcnow)
     deadline = Column(DateTime, default=utcnow) # DEPRECATED
@@ -125,6 +126,8 @@ class Order(Base):
     detail_price_calculation = Column(Text, nullable=True) # JSON 
     detail_time = Column(Float, nullable=True)
     document_ids = Column(Text, nullable=True)
+    electroplating_family = Column(Text, nullable=True)
+    electroplating_process_id = Column(Text, nullable=True)
     file_id = Column(Integer, ForeignKey('files.id'))
     finish_id = Column(String, default="1")
     height = Column(Integer, nullable=True)
@@ -146,6 +149,7 @@ class Order(Base):
     ml_model = Column(String, nullable=True) # TODO
     order_code = Column(String, nullable=True)
     order_name = Column(String, nullable=True)
+    processing_depth_microns = Column(Float, nullable=True)
     quantity = Column(Integer, default=1)
     service_id = Column(String)
     special_instructions = Column(Text) # TODO
