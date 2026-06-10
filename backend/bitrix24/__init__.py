@@ -1,7 +1,7 @@
 """Bitrix24 REST API wrapper.
 
 Provides HTTP client, DTOs, and CRUD services for Bitrix24 CRM entities
-(deals, leads, contacts, invoices, products, statuses, categories, userfields, etc.).
+(deals, leads, contacts, activities, invoices, products, statuses, categories, userfields, etc.).
 
 Authentication:
 - Webhook: base_url = https://{portal}/rest/{user_id}/{webhook_code}/
@@ -38,6 +38,12 @@ from backend.bitrix24.dto.invoice import Invoice, InvoiceCreate, InvoiceUpdate
 from backend.bitrix24.dto.lead import Lead, LeadCreate, LeadUpdate
 from backend.bitrix24.dto.company import Company, CompanyCreate, CompanyUpdate
 from backend.bitrix24.dto.contact import Contact, ContactCreate, ContactUpdate
+from backend.bitrix24.dto.activity import (
+    Activity,
+    ActivityCommunication,
+    ActivityCreate,
+    ActivityUpdate,
+)
 from backend.bitrix24.dto.requisite_link import RequisiteLink, RequisiteLinkFields
 from backend.bitrix24.services.deal import DealService
 from backend.bitrix24.services.status import StatusService
@@ -51,6 +57,7 @@ from backend.bitrix24.services.invoice import InvoiceService
 from backend.bitrix24.services.lead import LeadService
 from backend.bitrix24.services.company import CompanyService
 from backend.bitrix24.services.contact import ContactService
+from backend.bitrix24.services.activity import ActivityService
 from backend.bitrix24.services.requisite_link import RequisiteLinkService
 
 __all__ = [
@@ -105,6 +112,11 @@ __all__ = [
     "CompanyUpdate",
     "CompanyService",
     "Contact",
+    "Activity",
+    "ActivityCommunication",
+    "ActivityCreate",
+    "ActivityUpdate",
+    "ActivityService",
     "RequisiteLink",
     "RequisiteLinkFields",
     "ContactCreate",

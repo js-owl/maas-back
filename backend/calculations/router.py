@@ -13,10 +13,7 @@ from backend import models, schemas
 from backend.core.dependencies import get_db
 from backend.auth.service import decode_access_token
 from backend.calculations.service import call_calculator_service
-from backend.calculations.proxy import (
-    get_services, get_other_services, get_materials, get_coefficients, 
-    get_locations, get_operations_available, get_electroplating_material_families
-)
+from backend.calculations.proxy import get_services, get_other_services, get_materials, get_coefficients, get_locations, get_operations_available
 from backend.utils.logging import get_logger
 from sqlalchemy import select
 
@@ -52,12 +49,7 @@ async def locations_options():
 
 @router.options('/operations_available', tags=["Calculation"])
 async def operations_available_options():
-    """Handle CORS preflight requests for available operations"""
-    return Response(status_code=200)
-
-@router.options('/electroplating_material_families', tags=["Calculation"])
-async def electroplating_material_families_available_options():
-    """Handle CORS preflight requests for electroplating material families"""
+    """Handle CORS preflight requests for locations"""
     return Response(status_code=200)
 
 @router.post('/calculate-price', tags=["Calculation"])
@@ -150,8 +142,8 @@ async def calculate_price(
     
     # Use default values if not provided (let calculator service handle validation)
     quantity = request_data.quantity or 1
-    material_id = request_data.material_id
-    material_form = request_data.material_form
+    material_id = request_data.material_id or "alum_D16"
+    material_form = request_data.material_form or "rod"
     tolerance_id = request_data.tolerance_id or "1"
     finish_id = request_data.finish_id or "1"
     cover_id = request_data.cover_id or ["1"]
@@ -159,11 +151,6 @@ async def calculate_price(
     k_cert = request_data.k_cert or ["a", "f"]
     location = request_data.location or "location_1"
     is_need_special_equipment = request_data.is_need_special_equipment or 0
-    # add for electroplating_auto service
-    electroplating_family = request_data.electroplating_family
-    electroplating_process_id = request_data.electroplating_process_id
-    coating_thickness_microns = request_data.coating_thickness_microns
-    processing_depth_microns = request_data.processing_depth_microns
 
     # Process k_cert to list if passed as JSON string
     if isinstance(k_cert, str):
@@ -216,9 +203,7 @@ async def calculate_price(
         
         if available_materials_full and material_id not in available_materials_full:
             logger.warning(f"Invalid material_id: {material_id} not in {available_materials_full}")
-            if electroplating_family is None:
-                logger.warning(f"Invalid material: electroplating_family is None and material is invalid")
-                raise HTTPException(status_code=400, detail=f"Invalid material_id: {material_id}. Available materials: {available_materials_full}. Or you should fill electroplating_family attr.")
+            raise HTTPException(status_code=400, detail=f"Invalid material_id: {material_id}. Available materials: {available_materials_full}")
         else:
             logger.info(f"Material validation passed for: {material_id}")
     except HTTPException:
@@ -256,10 +241,6 @@ async def calculate_price(
             finish_id=finish_id,
             cover_id=cover_id_for_calculator,
             is_need_special_equipment=is_need_special_equipment,
-            electroplating_family=electroplating_family, # add for electroplating_auto service
-            electroplating_process_id=electroplating_process_id, # add for electroplating_auto service
-            coating_thickness_microns=coating_thickness_microns, # add for electroplating_auto service
-            processing_depth_microns=processing_depth_microns, # add for electroplating_auto service
             k_otk=k_otk,
             k_cert=k_cert,
             timeout=10.0,
@@ -385,11 +366,5 @@ async def get_calculator_locations(request: Request):
 
 @router.get('/operations_available', tags=["Calculator"])
 async def get_calculator_operations_available(request: Request, service_id: str):
-    """Proxy endpoint to get available operations from calculator service"""
+    """Proxy endpoint to get available locations from calculator service"""
     return await get_operations_available(service_id=service_id, request=request)
-
-
-@router.get('/electroplating_material_families', tags=["Calculator"])
-async def get_calculator_electroplating_material_families(request: Request, electroplating_process_id: str):
-    """Proxy endpoint to get available electroplating material families from calculator service"""
-    return await get_electroplating_material_families(request, electroplating_process_id)

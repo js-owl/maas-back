@@ -4,15 +4,25 @@ Handles login, logout, and registration endpoints
 """
 from typing import Optional
 
-from fastapi import APIRouter, Cookie, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, status, Response
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import func, select
 from backend import models, schemas
 from backend.core.dependencies import get_request_db as get_db
 from backend.core.redis import get_redis
 from backend.core.config import BITRIX_ENABLED, REFRESH_COOKIE_NAME
 from backend.bitrix24.user_sync import enqueue_user_create
+from backend.auth.email_verification import (
+    confirm_email,
+    get_client_ip,
+    send_confirmation_email,
+)
+from backend.auth.password_recovery import (
+    reset_password,
+    send_password_recovery_email,
+)
+from backend.auth.dependencies import ensure_account_accessible
 from backend.auth.service import (
     authenticate_user,
     clear_refresh_cookie,
@@ -50,7 +60,7 @@ async def refresh_options():
 
 
 def _access_token_for_user(user: models.User) -> str:
-    return create_access_token({"sub": user.username, "is_admin": user.is_admin})
+    return create_access_token({"sub": str(user.id), "is_admin": user.is_admin})
 
 
 @router.post('/login', response_model=schemas.LoginResponse, tags=["Authentication"], openapi_extra={"security": []})
@@ -61,12 +71,14 @@ async def login(
     redis: Redis = Depends(get_redis),
 ):
     """Login user and return access token"""
-    user = await authenticate_user(db, login_data.username, login_data.password)
+    user = await authenticate_user(db, login_data.personal_email, login_data.password)
     if not user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect personal email or password")
+    ensure_account_accessible(user)
     access_token = _access_token_for_user(user)
-    refresh_token, jti, ttl_seconds = create_refresh_token(user.username, login_data.remember_me)
-    await store_refresh_session(redis, jti, user.username, ttl_seconds)
+    user_id = str(user.id)
+    refresh_token, jti, ttl_seconds = create_refresh_token(user_id, login_data.remember_me)
+    await store_refresh_session(redis, jti, user_id, ttl_seconds)
     issue_refresh_cookie(response, refresh_token, login_data.remember_me, ttl_seconds)
     return schemas.LoginResponse(
         access_token=access_token, 
@@ -93,15 +105,21 @@ async def refresh(
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
 
     jti = payload["jti"]
-    username = payload["sub"]
-    stored_username = await get_refresh_session(redis, jti)
-    if stored_username != username:
+    user_id = payload["sub"]
+    stored_user_id = await get_refresh_session(redis, jti)
+    if stored_user_id != user_id:
         clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh session expired or revoked")
 
     await delete_refresh_session(redis, jti)
 
-    result = await db.execute(select(models.User).where(models.User.username == username))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        clear_refresh_cookie(response)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+
+    result = await db.execute(select(models.User).where(models.User.id == user_id_int))
     user = result.scalar_one_or_none()
     if user is None:
         clear_refresh_cookie(response)
@@ -110,9 +128,15 @@ async def refresh(
         clear_refresh_cookie(response)
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User account is cancelled")
 
+    try:
+        ensure_account_accessible(user)
+    except HTTPException:
+        clear_refresh_cookie(response)
+        raise
+
     remember_me = bool(payload.get("remember_me", False))
-    new_refresh_token, new_jti, ttl_seconds = create_refresh_token(user.username, remember_me)
-    await store_refresh_session(redis, new_jti, user.username, ttl_seconds)
+    new_refresh_token, new_jti, ttl_seconds = create_refresh_token(str(user.id), remember_me)
+    await store_refresh_session(redis, new_jti, str(user.id), ttl_seconds)
     issue_refresh_cookie(response, new_refresh_token, remember_me, ttl_seconds)
 
     return schemas.RefreshResponse(
@@ -149,40 +173,40 @@ async def register_options():
     return Response(status_code=200)
 
 
-@router.post('/register', response_model=schemas.UserOut, tags=["Authentication"])
+@router.post('/register', response_model=schemas.UserOut, status_code=status.HTTP_201_CREATED, tags=["Authentication"])
 async def register_user(
     user: schemas.UserCreate,
     db: AsyncSession = Depends(get_db),
     redis: Redis = Depends(get_redis),
 ):
     """Register a new user"""
-    logger.info(f"Registering user: {user.username}")
-    result = await db.execute(select(models.User).where(models.User.username == user.username))
+    personal_email = user.personal_email.strip().lower()
+    logger.info("Registering user with personal email")
+    result = await db.execute(
+        select(models.User).where(func.lower(models.User.personal_email) == personal_email)
+    )
     existing = result.scalar_one_or_none()
     if existing:
-        logger.warning(f"Username already registered: {user.username}")
-        raise HTTPException(status_code=400, detail="Username already registered")
+        logger.warning("Personal email already registered")
+        raise HTTPException(status_code=400, detail="Personal email already registered")
     # Always hash password
     hashed_password = get_password_hash(user.password)
     db_user = models.User(
-        username=user.username, 
-        hashed_password=hashed_password, 
+        personal_email=personal_email,
+        hashed_password=hashed_password,
         is_admin=False,
-        user_type=user.user_type,
+        user_type="individual",
         status="active",
-        email=user.email,
+        email=None,
         full_name=user.full_name,
-        city=user.city,
-        company=user.company,
-        phone_number=user.phone_number,
         personal_phone_number=user.personal_phone_number,
-        payment_card_number=user.payment_card_number,
-        location=(user.location.strip() if user.location else None),
+        email_verified=False,
+        password_changed_at=models.utcnow(),
     )
     db.add(db_user)
     await db.commit()
     await db.refresh(db_user)
-    logger.info(f"User created: {db_user.id} - {db_user.username}")
+    logger.info("User created: %s", db_user.id)
 
     if BITRIX_ENABLED:
         try:
@@ -193,3 +217,107 @@ async def register_user(
                 db_user.id,
             )
     return db_user
+
+
+@router.options('/email/send-confirmation', tags=["Authentication"])
+async def send_confirmation_options():
+    """Handle CORS preflight for send confirmation email."""
+    return Response(status_code=200)
+
+
+@router.options('/email/confirm', tags=["Authentication"])
+async def confirm_email_options():
+    """Handle CORS preflight for email confirmation."""
+    return Response(status_code=200)
+
+
+@router.post(
+    '/email/send-confirmation',
+    response_model=schemas.EmailSendConfirmationResponse,
+    tags=["Authentication"],
+    openapi_extra={"security": []},
+)
+async def send_confirmation(
+    body: schemas.EmailSendConfirmationRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Send email verification link to the given address (public)."""
+    client_ip = get_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("X-Forwarded-For"),
+    )
+    return await send_confirmation_email(db, redis, body.personal_email, client_ip)
+
+
+@router.post(
+    '/email/confirm',
+    response_model=schemas.EmailConfirmResponse,
+    tags=["Authentication"],
+    openapi_extra={"security": []},
+)
+async def confirm_email_endpoint(
+    body: schemas.EmailConfirmRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Confirm email using verification token (public)."""
+    client_ip = get_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("X-Forwarded-For"),
+    )
+    return await confirm_email(db, redis, body.token, client_ip)
+
+
+@router.options('/password/send-recovery', tags=["Authentication"])
+async def send_password_recovery_options():
+    """Handle CORS preflight for send password recovery email."""
+    return Response(status_code=200)
+
+
+@router.options('/password/reset', tags=["Authentication"])
+async def reset_password_options():
+    """Handle CORS preflight for password reset."""
+    return Response(status_code=200)
+
+
+@router.post(
+    '/password/send-recovery',
+    response_model=schemas.PasswordSendRecoveryResponse,
+    tags=["Authentication"],
+    openapi_extra={"security": []},
+)
+async def send_password_recovery(
+    body: schemas.PasswordSendRecoveryRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Send password recovery link to the given address (public)."""
+    client_ip = get_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("X-Forwarded-For"),
+    )
+    return await send_password_recovery_email(db, redis, body.personal_email, client_ip)
+
+
+@router.post(
+    '/password/reset',
+    response_model=schemas.PasswordResetResponse,
+    tags=["Authentication"],
+    openapi_extra={"security": []},
+)
+async def reset_password_endpoint(
+    body: schemas.PasswordResetRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+):
+    """Reset password using recovery token (public)."""
+    client_ip = get_client_ip(
+        request.client.host if request.client else None,
+        request.headers.get("X-Forwarded-For"),
+    )
+    return await reset_password(db, redis, body.token, body.password, client_ip)

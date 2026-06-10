@@ -51,14 +51,14 @@ def _legacy_address_clear_fields() -> dict[str, Any]:
 
 def _contact_fields_from_user(user: User) -> dict[str, Any]:
     last_name, name, second_name = _name_parts(getattr(user, "full_name", None) or "")
-    phone = getattr(user, "phone_number", None)
-    email = getattr(user, "email", None)
+    phone = getattr(user, "personal_phone_number", None)
+    email = getattr(user, "personal_email", None)
     return {
         "ORIGIN_ID": str(user.id),
         "LAST_NAME": last_name,
         "NAME": name,
         "SECOND_NAME": second_name,
-        "PHONE": [{"VALUE": phone, "VALUE_TYPE": "WORK"}] if phone else None,
+        "PHONE": [{"VALUE": phone, "VALUE_TYPE": "MOBILE"}] if phone else None,
         "EMAIL": [{"VALUE": email, "VALUE_TYPE": "WORK"}] if email else None,
     }
 
@@ -80,12 +80,14 @@ def has_company_contact_payload(user: User) -> bool:
 def _company_contact_fields_from_user(user: User, *, company_id: int) -> dict[str, Any]:
     last_name, name, second_name = _name_parts(getattr(user, "full_name", None) or "")
     personal_phone = getattr(user, "personal_phone_number", None)
+    personal_email = getattr(user, "personal_email", None)
     return {
         "ORIGIN_ID": str(user.id),
         "LAST_NAME": last_name,
         "NAME": name,
         "SECOND_NAME": second_name,
         "PHONE": [{"VALUE": personal_phone, "VALUE_TYPE": "MOBILE"}] if personal_phone else None,
+        "EMAIL": [{"VALUE": personal_email, "VALUE_TYPE": "WORK"}] if personal_email else None,
         "COMPANY_ID": int(company_id),
         "COMPANY_IDS": [int(company_id)],
     }
@@ -140,8 +142,8 @@ def contact_to_user_update(contact: Contact) -> dict[str, Any]:
 
     payload = {
         "full_name": full_name,
-        "phone_number": _first_phone(contact),
-        "email": _first_email(contact),
+        "personal_phone_number": _first_phone(contact),
+        "personal_email": _first_email(contact),
         "postal": getattr(contact, "ADDRESS_POSTAL_CODE", None),
         "city": getattr(contact, "ADDRESS_CITY", None),
         "region": getattr(contact, "ADDRESS_REGION", None),

@@ -13,6 +13,7 @@ import warnings
 
 # Suppress bcrypt version warning
 warnings.filterwarnings("ignore", message=".*bcrypt.*")
+from backend.utils.logging import get_logger
 from backend.core.config import (
     ACCESS_TOKEN_EXPIRE_MINUTES,
     ALGORITHM,
@@ -29,6 +30,7 @@ from backend.core.config import (
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 REFRESH_REDIS_PREFIX = "auth:refresh:"
+logger = get_logger(__name__)
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -68,13 +70,13 @@ def get_refresh_ttl_seconds(remember_me: bool) -> int:
     return REFRESH_TOKEN_EXPIRE_MINUTES_SESSION * 60
 
 
-def create_refresh_token(username: str, remember_me: bool) -> Tuple[str, str, int]:
+def create_refresh_token(user_id: str, remember_me: bool) -> Tuple[str, str, int]:
     """Create a signed refresh JWT with a unique session identifier."""
     jti = str(uuid4())
     ttl_seconds = get_refresh_ttl_seconds(remember_me)
     now = datetime.utcnow()
     payload = {
-        "sub": username,
+        "sub": user_id,
         "jti": jti,
         "token_use": "refresh",
         "remember_me": remember_me,
@@ -103,13 +105,13 @@ def get_refresh_session_key(jti: str) -> str:
     return f"{REFRESH_REDIS_PREFIX}{jti}"
 
 
-async def store_refresh_session(redis: Redis, jti: str, username: str, ttl_seconds: int) -> None:
+async def store_refresh_session(redis: Redis, jti: str, user_id: str, ttl_seconds: int) -> None:
     """Store a refresh session allowlist entry in Redis."""
-    await redis.set(get_refresh_session_key(jti), username, ex=ttl_seconds)
+    await redis.set(get_refresh_session_key(jti), user_id, ex=ttl_seconds)
 
 
 async def get_refresh_session(redis: Redis, jti: str) -> Optional[str]:
-    """Fetch the username bound to a refresh session."""
+    """Fetch the user id bound to a refresh session."""
     value = await redis.get(get_refresh_session_key(jti))
     return value if isinstance(value, str) else None
 
@@ -117,6 +119,23 @@ async def get_refresh_session(redis: Redis, jti: str) -> Optional[str]:
 async def delete_refresh_session(redis: Redis, jti: str) -> None:
     """Remove a refresh session from Redis."""
     await redis.delete(get_refresh_session_key(jti))
+
+
+async def revoke_all_refresh_sessions(redis: Redis, user_id: str) -> int:
+    """Remove all refresh allowlist entries for a user id. Returns count deleted."""
+    revoked = 0
+    async for key in redis.scan_iter(match=f"{REFRESH_REDIS_PREFIX}*"):
+        value = await redis.get(key)
+        if value is None:
+            continue
+        if isinstance(value, bytes):
+            value = value.decode()
+        if value == user_id:
+            await redis.delete(key)
+            revoked += 1
+    if revoked:
+        logger.info("Revoked %s refresh session(s) for user %s", revoked, user_id)
+    return revoked
 
 
 def issue_refresh_cookie(
@@ -155,12 +174,15 @@ def clear_refresh_cookie(response: Response) -> None:
     response.delete_cookie(**cookie_kwargs)
 
 
-async def authenticate_user(db, username: str, password: str):
-    """Authenticate a user with username and password"""
-    from sqlalchemy import select
+async def authenticate_user(db, personal_email: str, password: str):
+    """Authenticate a user with personal email and password."""
+    from sqlalchemy import func, select
     from backend import models
-    
-    result = await db.execute(select(models.User).where(models.User.username == username))
+
+    normalized = personal_email.strip().lower()
+    result = await db.execute(
+        select(models.User).where(func.lower(models.User.personal_email) == normalized)
+    )
     user = result.scalar_one_or_none()
     if not user:
         return None

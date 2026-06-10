@@ -50,7 +50,7 @@ from fastapi.exceptions import RequestValidationError
 from backend.database import (
     seed_admin, ensure_schema, 
     _env_json_dict, apply_admin_location_overrides,
-    ensure_demo_files, ensure_demo_file_previews,
+    ensure_demo_files,
     AsyncSessionLocal
 )
 from sqlalchemy import select, func
@@ -439,14 +439,9 @@ async def startup_event():
     
     # Ensure all tables and columns exist (PostgreSQL-compatible, idempotent)
     await ensure_schema()
-
-    # Seed admin before demo files: demo records need a valid uploader FK.
-    await seed_admin()
-
     overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
     await apply_admin_location_overrides(overrides)
     await ensure_demo_files()
-    await ensure_demo_file_previews()
 
     # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
     try:
@@ -479,6 +474,9 @@ async def startup_event():
 
     # Automatically migrate invoices from documents table if needed
     await auto_migrate_invoices_if_needed()
+    
+    # Seed admin user
+    await seed_admin()
 
     # Initialize Redis connection pool
     await init_redis(app)

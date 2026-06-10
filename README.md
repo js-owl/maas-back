@@ -247,6 +247,7 @@ docker-compose down
 - **[Features Overview](FEATURES.md)** - Feature history and roadmap
 - **[Migration Guide](docs/migration_guide_v2_to_v3.md)** - Frontend migration guide
 - **[Authentication Guide](docs/authentication_and_permissions.md)** - Security documentation
+- **[Email verification & password recovery](docs/email-verification-and-password-recovery.md)** - Public auth routes for confirm-email and forgot-password flows
 
 ## 🤝 Contributing
 

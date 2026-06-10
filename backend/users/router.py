@@ -80,7 +80,7 @@ async def update_profile(
 ):
     """Update current user's profile with conditional logic for user types"""
     # Log request details for debugging
-    logger.info(f"PUT /profile request - User ID: {current_user.id}, Username: {current_user.username}")
+    logger.info(f"PUT /profile request - User ID: {current_user.id}")
     if request:
         logger.info(f"PUT /profile - Method: {request.method}, URL: {request.url}")
         logger.info(f"PUT /profile - Headers: {dict(request.headers)}")

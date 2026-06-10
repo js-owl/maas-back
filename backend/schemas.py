@@ -36,34 +36,38 @@ class MaasBitrixIdsMappingOut(MaasBitrixIdsMappingBase):
 
 # User schemas
 class UserCreate(BaseModel):
-    username: str
+    full_name: str
+    personal_email: str
+    personal_phone_number: str
     password: str
-    user_type: str  # "individual" or "legal" - required field
-    email: Optional[str] = None
-    full_name: Optional[str] = None
-    city: Optional[str] = None
-    company: Optional[str] = None
-    phone_number: Optional[str] = None
-    personal_phone_number: Optional[str] = None
-    payment_card_number: Optional[str] = None
-    location: Optional[str] = None
-    
-    @validator('user_type')
-    def validate_user_type(cls, v):
-        if v not in ['individual', 'legal']:
-            raise ValueError('user_type must be either "individual" or "legal"')
-        return v
-    
-    @validator('username')
-    def validate_username(cls, v):
+
+    class Config:
+        extra = "forbid"
+
+    @validator('full_name')
+    def validate_full_name(cls, v):
         if not v or len(v.strip()) == 0:
-            raise ValueError('username cannot be empty')
-        if len(v) < 3:
-            raise ValueError('username must be at least 3 characters long')
-        if len(v) > 50:
-            raise ValueError('username must be no more than 50 characters long')
+            raise ValueError('full_name cannot be empty')
         return v.strip()
-    
+
+    @validator('personal_phone_number')
+    def validate_personal_phone_number(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError('personal_phone_number cannot be empty')
+        return v.strip()
+
+    @validator('personal_email')
+    def validate_personal_email(cls, v):
+        if v is None or v.strip() == "":
+            raise ValueError('personal_email cannot be empty')
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v.strip()):
+            raise ValueError('personal_email must be a valid email address')
+        if '..' in v.strip():
+            raise ValueError('personal_email cannot contain consecutive dots')
+        return v.strip().lower()
+
     @validator('password')
     def validate_password(cls, v):
         if not v or len(v.strip()) == 0:
@@ -71,30 +75,24 @@ class UserCreate(BaseModel):
         if len(v) < 6:
             raise ValueError('password must be at least 6 characters long')
         return v
-    
-    @validator('email')
-    def validate_email(cls, v):
-        if v is not None:
-            if v.strip() == "":
-                # Reject empty strings
-                raise ValueError('email cannot be empty')
-            import re
-            email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-            if not re.match(email_pattern, v.strip()):
-                raise ValueError('email must be a valid email address')
-            # Additional check for double dots
-            if '..' in v.strip():
-                raise ValueError('email cannot contain consecutive dots')
-            return v.strip()
-        return None
+
 
 class UserLogin(BaseModel):
-    username: str
+    personal_email: str
     password: str
     remember_me: bool = False
 
+    class Config:
+        extra = "forbid"
+
+    @validator('personal_email')
+    def validate_personal_email(cls, v):
+        if v is None or v.strip() == "":
+            raise ValueError('personal_email cannot be empty')
+        return v.strip().lower()
+
+
 class UserUpdate(BaseModel):
-    username: Optional[str] = None
     password: Optional[str] = None
     user_type: Optional[str] = None
     email: Optional[str] = None
@@ -118,7 +116,20 @@ class UserUpdate(BaseModel):
     payment_account: Optional[str] = None
     payment_cor_account: Optional[str] = None
     location: Optional[str] = None
+
+    class Config:
+        extra = "forbid"
     
+    @validator('password')
+    def validate_password(cls, v):
+        if v is None:
+            return v
+        if not v or len(v.strip()) == 0:
+            raise ValueError('password cannot be empty')
+        if len(v) < 6:
+            raise ValueError('password must be at least 6 characters long')
+        return v
+
     @validator('user_type')
     def validate_user_type(cls, v):
         if v is not None and v not in ['individual', 'legal']:
@@ -146,14 +157,31 @@ class UserUpdate(BaseModel):
             raise ValueError('payment_bik must be at least 9 characters for legal entities')
         return v
 
+    @validator('email')
+    def validate_email_update(cls, v):
+        if v is None:
+            return v
+        if v.strip() == "":
+            return None
+        import re
+        email_pattern = r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
+        if not re.match(email_pattern, v.strip()):
+            raise ValueError('email must be a valid email address')
+        if '..' in v.strip():
+            raise ValueError('email cannot contain consecutive dots')
+        return v.strip()
+
 class UserOut(BaseModel):
     id: int
-    username: str
+    personal_email: str
     is_admin: bool
     must_change_password: bool
     user_type: str
     status: str
     email: Optional[str] = None
+    email_verified: bool = False
+    email_verified_at: Optional[datetime] = None
+    password_changed_at: Optional[datetime] = None
     full_name: Optional[str] = None
     city: Optional[str] = None
     company: Optional[str] = None
@@ -254,10 +282,9 @@ class OrderCreate(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: Optional[str] = None  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
-    material_form: Optional[str] = None      # Material form (e.g., "rod", "plate", "sheet", "bar")
+    material_id: str = "alum_D16"  # Material ID from calculator service (e.g., "alum_D16", "steel_304")
+    material_form: str = "rod"      # Material form (e.g., "rod", "plate", "sheet", "bar")
     special_instructions: Optional[str] = None
-    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
     k_cert: List[str] = ["a", "f"]  # Certification types
     tolerance_id: str = "1"
@@ -265,11 +292,6 @@ class OrderCreate(BaseModel):
     cover_id: List[str] = ["1"]
     location: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -345,7 +367,6 @@ class OrderUpdate(BaseModel):
     status: Optional[str] = None
     front_status: Optional[str] = None
     special_instructions: Optional[str] = None
-    deadline: Optional[datetime] = None # DEPRECATED
     material_id: Optional[str] = None  # Material ID from calculator service
     material_form: Optional[str] = None  # Material form
     file_id: Optional[int] = None
@@ -357,12 +378,6 @@ class OrderUpdate(BaseModel):
     finish_id: Optional[str] = None
     cover_id: Optional[Any] = None  # Accept any type, will be validated and converted to List[str]
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
-
     # Additional documents attached to the order
     document_ids: Optional[List[int]] = None  # List of document IDs to attach to the order
     location: Optional[str] = None
@@ -458,7 +473,6 @@ class OrderOut(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
-    deadline: Optional[datetime] = None # DEPRECATED
     total_price_breakdown: Optional[Dict[str, Any]]
     detail_price_calculation: Optional[Dict[str, Any]] = None
     status: str
@@ -469,12 +483,6 @@ class OrderOut(BaseModel):
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
-
     
     @validator('cover_id', pre=True)
     def parse_cover_id(cls, v):
@@ -628,7 +636,6 @@ class OrderOutSimple(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
-    deadline: Optional[datetime] = None # DEPRECATED
     status: str
     # Calculation coefficients
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
@@ -677,12 +684,6 @@ class OrderOutSimple(BaseModel):
     invoice_ids: Optional[List[int]] = None  # List of invoice document IDs
     message: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
-
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -740,7 +741,6 @@ class OrderWithDetails(BaseModel):
     material_id: Optional[str]  # Material ID from calculator service
     material_form: Optional[str]  # Material form
     special_instructions: Optional[str]
-    deadline: Optional[datetime] = None # DEPRECATED
     status: str
     # Calculation coefficients
     k_otk: str = "1.0"  # OTK (quality control) coefficient, default "1"
@@ -792,12 +792,6 @@ class OrderWithDetails(BaseModel):
     user: UserOut
     message: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
-
     
     @validator('document_ids', pre=True)
     def parse_document_ids(cls, v):
@@ -945,7 +939,7 @@ class CalculationRequest(BaseModel):
     width: Optional[int] = None
     height: Optional[int] = None
     material_id: Optional[str] = None
-    material_form: Optional[str] = None
+    material_form: Optional[str] = "rod"
     special_instructions: Optional[str] = None
     tolerance_id: Optional[str] = "1"
     finish_id: Optional[str] = "1"
@@ -955,11 +949,6 @@ class CalculationRequest(BaseModel):
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
 
     @validator('service_id')
     def validate_service_id(cls, v):
@@ -1017,18 +1006,12 @@ class OrderCreateRequest(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: Optional[str] = None
-    material_form: Optional[str] = None
+    material_id: str = "alum_D16"
+    material_form: str = "rod"
     special_instructions: Optional[str] = None
-    deadline: Optional[datetime] = None # DEPRECATED
     tolerance_id: str = "1"  # Default value to match OrderCreate
     finish_id: str = "1"  # Default value to match OrderCreate
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
     cover_id: List[str] = ["1"]  # Default value to match OrderCreate
     k_otk: str = "1.0"  # Default value to match OrderCreate
     k_cert: List[str] = ["a", "f"]  # Default value to match OrderCreate
@@ -1045,21 +1028,15 @@ class BasketItemIn(BaseModel):
     length: Optional[int] = None
     width: Optional[int] = None
     height: Optional[int] = None
-    material_id: Optional[str] = None
-    material_form: Optional[str] = None
+    material_id: str = "alum_D16"
+    material_form: str = "rod"
     special_instructions: Optional[str] = None
-    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: str = "1.0"
     k_cert: List[str] = ["a", "f"]
     tolerance_id: str = "1"
     finish_id: str = "1"
     cover_id: List[str] = ["1"]
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
     document_ids: Optional[List[int]] = []
     location: Optional[str] = None
     file_id: Optional[int] = None
@@ -1076,18 +1053,12 @@ class BasketItemUpdate(BaseModel):
     material_id: Optional[str] = None
     material_form: Optional[str] = None
     special_instructions: Optional[str] = None
-    deadline: Optional[datetime] = None # DEPRECATED
     k_otk: Optional[str] = None
     k_cert: Optional[List[str]] = None
     tolerance_id: Optional[str] = None
     finish_id: Optional[str] = None
     cover_id: Optional[List[str]] = None
     is_need_special_equipment: Optional[bool] = None
-    # add for electroplating_auto service
-    electroplating_family: Optional[str] = None
-    electroplating_process_id: Optional[str] = None
-    coating_thickness_microns: Optional[float] = None
-    processing_depth_microns: Optional[float] = None
     document_ids: Optional[List[int]] = None
     location: Optional[str] = None
     file_id: Optional[int] = None
@@ -1147,6 +1118,49 @@ class LogoutResponse(BaseModel):
     message: str
     detail: str
 
+
+class EmailSendConfirmationRequest(BaseModel):
+    personal_email: str
+
+
+class EmailSendConfirmationResponse(BaseModel):
+    message: str
+
+
+class EmailConfirmRequest(BaseModel):
+    token: str
+
+
+class EmailConfirmResponse(BaseModel):
+    message: str
+    email_verified: bool = True
+
+
+class PasswordSendRecoveryRequest(BaseModel):
+    personal_email: str
+
+
+class PasswordSendRecoveryResponse(BaseModel):
+    message: str
+
+
+class PasswordResetRequest(BaseModel):
+    token: str
+    password: str
+
+    @validator("password")
+    def validate_password(cls, v):
+        if not v or len(v.strip()) == 0:
+            raise ValueError("password cannot be empty")
+        if len(v) < 6:
+            raise ValueError("password must be at least 6 characters long")
+        return v
+
+
+class PasswordResetResponse(BaseModel):
+    message: str
+
+
 class HealthResponse(BaseModel):
     """Health check response format"""
     status: str
@@ -1188,7 +1202,6 @@ class KitOut(BaseModel):
     status_color: Optional[str] = None
     created_at: datetime
     updated_at: datetime
-    finished_at: Optional[datetime] = None # TODO
     location: Optional[str] = None
 
     @validator("order_ids", pre=True)
@@ -1226,7 +1239,6 @@ class KitUpdate(BaseModel):
     kit_price: Optional[float] = None  # Reverse sync from Bitrix deal OPPORTUNITY
     delivery_price: Optional[float] = None  # Reverse sync from Bitrix UF_CRM_SHIPPING_COST
     location: Optional[str] = None
-    finished_at: Optional[datetime] = None # TODO
 
 
 class OrderSummaryItem(BaseModel):

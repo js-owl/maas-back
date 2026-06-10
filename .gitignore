@@ -101,3 +101,6 @@ simple_test.py
 test_calculator_endpoints.py
 .cursor
 .cursor/
+
+# OpenSpec (local workflow artifacts)
+openspec/

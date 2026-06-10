@@ -190,15 +190,3 @@ async def get_operations_available(service_id: str, request: Request = None) -> 
     if isinstance(response, dict) and "values" in response:
         return {"values": response["values"]}
     return response
-
-
-async def get_electroplating_material_families(request: Request, electroplating_process_id: str) -> Dict[str, List[Dict[str, Any]]]:
-    """Get available materials from calculator service"""
-    endpoint = "electroplating_material_families"
-    if electroplating_process_id:
-        endpoint += f"?electroplating_process_id={electroplating_process_id}"
-    response = await proxy_get_request(endpoint, request=request)
-    # 7000 server v3.1.0 returns {"values": [...]}
-    if isinstance(response, dict) and "values" in response:
-        return {"values": response["values"]}
-    return response

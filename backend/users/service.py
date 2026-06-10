@@ -8,7 +8,7 @@ from backend import models, schemas
 from backend.users.repository import (
     create_user as repo_create_user,
     get_user_by_id as repo_get_user_by_id,
-    get_user_by_username as repo_get_user_by_username,
+    get_user_by_personal_email as repo_get_user_by_personal_email,
     get_users as repo_get_users,
     get_active_user_by_id as repo_get_active_user_by_id,
     update_user as repo_update_user,
@@ -19,10 +19,9 @@ from backend.users.repository import (
 
 async def create_user(db: AsyncSession, user: schemas.UserCreate) -> models.User:
     """Create a new user with business logic validation"""
-    # Check if username already exists
-    existing = await repo_get_user_by_username(db, user.username)
+    existing = await repo_get_user_by_personal_email(db, user.personal_email)
     if existing:
-        raise ValueError("Username already registered")
+        raise ValueError("Personal email already registered")
     
     return await repo_create_user(db, user)
 
@@ -32,9 +31,9 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User
     return await repo_get_user_by_id(db, user_id)
 
 
-async def get_user_by_username(db: AsyncSession, username: str) -> Optional[models.User]:
-    """Get user by username"""
-    return await repo_get_user_by_username(db, username)
+async def get_user_by_personal_email(db: AsyncSession, personal_email: str) -> Optional[models.User]:
+    """Get user by personal email."""
+    return await repo_get_user_by_personal_email(db, personal_email)
 
 
 async def get_active_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User]:
@@ -53,12 +52,6 @@ async def update_user(db: AsyncSession, user_id: int, user_update: schemas.UserU
     user = await repo_get_user_by_id(db, user_id)
     if not user:
         return None
-    
-    # If username is being changed, check for conflicts
-    if user_update.username and user_update.username != user.username:
-        existing = await repo_get_user_by_username(db, user_update.username)
-        if existing:
-            raise ValueError("Username already taken")
     
     return await repo_update_user(db, user_id, user_update)
 

@@ -9,6 +9,20 @@ from backend.core.dependencies import get_request_db as get_db
 from backend.auth.service import decode_access_token
 from typing import Optional
 
+EMAIL_NOT_VERIFIED_DETAIL = (
+    "Email address not verified. Please confirm your email before accessing your account."
+)
+
+
+def is_account_accessible(user: models.User) -> bool:
+    """Admins may access without verified email; regular users require verification."""
+    return bool(user.is_admin or user.email_verified)
+
+
+def ensure_account_accessible(user: models.User) -> None:
+    if not is_account_accessible(user):
+        raise HTTPException(status_code=403, detail=EMAIL_NOT_VERIFIED_DETAIL)
+
 
 def get_token_from_header(authorization: Optional[str] = Header(None)) -> str:
     """Extract token from Authorization header"""
@@ -30,17 +44,22 @@ async def get_current_user(
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
     
-    username = payload.get("sub")
-    if username is None:
+    user_id = payload.get("sub")
+    if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    
-    result = await db.execute(select(models.User).where(models.User.username == username))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=401, detail="Invalid authentication credentials")
+
+    result = await db.execute(select(models.User).where(models.User.id == user_id_int))
     user = result.scalar_one_or_none()
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     if getattr(user, "status", "active") == "cancelled":
         raise HTTPException(status_code=403, detail="User account is cancelled")
-    
+
+    ensure_account_accessible(user)
     return user
 
 
@@ -70,12 +89,18 @@ async def get_optional_current_user(
     if payload is None:
         return None
     
-    username = payload.get("sub")
-    if username is None:
+    user_id = payload.get("sub")
+    if user_id is None:
         return None
-    
-    result = await db.execute(select(models.User).where(models.User.username == username))
+    try:
+        user_id_int = int(user_id)
+    except (TypeError, ValueError):
+        return None
+
+    result = await db.execute(select(models.User).where(models.User.id == user_id_int))
     user = result.scalar_one_or_none()
     if user is not None and getattr(user, "status", "active") == "cancelled":
+        return None
+    if user is not None and not is_account_accessible(user):
         return None
     return user

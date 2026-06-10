@@ -4,7 +4,7 @@ Database operations for user management
 """
 from typing import List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import func, select, or_
 from backend import models, schemas
 from backend.core.base_repository import BaseRepository
 from backend.core.exceptions import NotFoundException
@@ -20,18 +20,21 @@ class UserRepository(BaseRepository[models.User]):
     def __init__(self):
         super().__init__(models.User)
     
-    async def get_by_username(self, db: AsyncSession, username: str) -> Optional[models.User]:
-        """Get user by username"""
+    async def get_by_personal_email(self, db: AsyncSession, personal_email: str) -> Optional[models.User]:
+        """Get user by personal email."""
+        normalized = personal_email.strip().lower()
         try:
-            result = await db.execute(select(models.User).where(models.User.username == username))
+            result = await db.execute(
+                select(models.User).where(func.lower(models.User.personal_email) == normalized)
+            )
             user = result.scalar_one_or_none()
             if user:
-                logger.info(f"[GET_BY_USERNAME] User: {username} - Found")
+                logger.info("[GET_BY_PERSONAL_EMAIL] User ID: %s - Found", user.id)
             else:
-                logger.info(f"[GET_BY_USERNAME] User: {username} - Not found")
+                logger.info("[GET_BY_PERSONAL_EMAIL] Not found")
             return user
         except Exception as e:
-            logger.error(f"[GET_BY_USERNAME] User: {username} - Error: {e}")
+            logger.error("[GET_BY_PERSONAL_EMAIL] Error: %s", e)
             raise
     
     async def create_user(self, db: AsyncSession, user: schemas.UserCreate) -> models.User:
@@ -39,16 +42,17 @@ class UserRepository(BaseRepository[models.User]):
         try:
             hashed_password = get_password_hash(user.password)
             user_data = user.dict(exclude={'password'})
+            user_data['personal_email'] = user_data['personal_email'].strip().lower()
             user_data['hashed_password'] = hashed_password
             user_data.setdefault('status', 'active')
             if 'location' not in user_data or (isinstance(user_data.get('location'), str) and not user_data.get('location').strip()):
                 user_data['location'] = None
             
             db_user = await self.create(db, **user_data)
-            logger.info(f"[CREATE_USER] User: {db_user.username} (ID: {db_user.id}) - Created")
+            logger.info(f"[CREATE_USER] User ID: {db_user.id} - Created")
             return db_user
         except Exception as e:
-            logger.error(f"[CREATE_USER] User: {user.username} - Error: {e}")
+            logger.error(f"[CREATE_USER] Personal email: {user.personal_email} - Error: {e}")
             raise
     
     async def update_user(self, db: AsyncSession, user_id: int, user_update: schemas.UserUpdate) -> models.User:
@@ -80,9 +84,9 @@ async def get_user_by_id(db: AsyncSession, user_id: int) -> Optional[models.User
     return await user_repository.get_by_id(db, user_id)
 
 
-async def get_user_by_username(db: AsyncSession, username: str) -> Optional[models.User]:
-    """Get user by username (backward compatibility)"""
-    return await user_repository.get_by_username(db, username)
+async def get_user_by_personal_email(db: AsyncSession, personal_email: str) -> Optional[models.User]:
+    """Get user by personal email."""
+    return await user_repository.get_by_personal_email(db, personal_email)
 
 
 async def get_users(db: AsyncSession) -> List[models.User]:

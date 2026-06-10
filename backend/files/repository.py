@@ -48,7 +48,6 @@ async def delete_file_record(db: AsyncSession, file_id: int) -> bool:
 
 async def update_file_preview(db: AsyncSession, file_id: int, preview_data: dict) -> Optional[models.FileStorage]:
     """Update file record with preview generation results"""
-    print('===== repo get_file_preview_path', file_id, preview_data.get('preview_path'))
     file_record = await get_file_by_id(db, file_id)
     if not file_record:
         return None

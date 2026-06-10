@@ -43,16 +43,10 @@ async def create_order(db: AsyncSession, user_id: int, order: schemas.OrderCreat
         material_id=order.material_id,
         material_form=order.material_form,
         special_instructions=order.special_instructions,
-        deadline=order.deadline, # DEPRECATED
         tolerance_id=order.tolerance_id,
         finish_id=order.finish_id,
         cover_id=order.cover_id,
         is_need_special_equipment=order.is_need_special_equipment,
-        # add for electroplating_auto service
-        electroplating_family=order.electroplating_family,
-        electroplating_process_id=order.electroplating_process_id,
-        coating_thickness_microns=order.coating_thickness_microns,
-        processing_depth_microns=order.processing_depth_microns,
         k_otk=order.k_otk,
         k_cert=order.k_cert,
         status='NEW',  # Use Bitrix stage name (NEW) instead of old status (pending)

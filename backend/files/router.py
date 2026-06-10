@@ -219,7 +219,6 @@ async def get_file_preview(
         preview_path = await get_file_preview_path(db, file_id)
         if not preview_path or not preview_path.exists():
             # Return placeholder if no preview available
-            logger.info("Preview_path is not exist: %s", preview_path)
             from backend.utils.helpers import generate_placeholder_preview
             placeholder_data = generate_placeholder_preview(
                 file_record.original_filename or file_record.filename
@@ -229,12 +228,10 @@ async def get_file_preview(
                 media_type="image/png",
                 headers={"Content-Disposition": "inline"}
             )
-        logger.info("Returned preview_path: %s", preview_path)
-        preview_bytes = preview_path.read_bytes()
-
+        
         # Return preview image
-        return StreamingResponse(
-            io.BytesIO(preview_bytes),
+        return FileResponse(
+            path=str(preview_path),
             media_type="image/png",
             headers={"Content-Disposition": "inline"}
         )

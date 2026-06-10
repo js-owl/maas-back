@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, DateTime, Text, JSON
+from sqlalchemy import Column, Integer, String, ForeignKey, Boolean, DateTime, Text, JSON, text
 from sqlalchemy import Float
 from sqlalchemy.orm import relationship, declarative_base
 from datetime import datetime, timezone
@@ -24,13 +24,16 @@ class User(Base):
     city = Column(String, nullable=True)
     company = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
-    email = Column(String, nullable=True)
+    email = Column(String, nullable=True, index=True)
+    email_verified = Column(Boolean, nullable=False, default=False, server_default=text("false"))
+    email_verified_at = Column(DateTime, nullable=True)
     full_name = Column(String, nullable=True)
     hashed_password = Column(String)
     is_admin = Column(Boolean, default=False)
     location = Column(Text, nullable=True)
     must_change_password = Column(Boolean, default=False)
     office = Column(String, nullable=True)
+    password_changed_at = Column(DateTime, nullable=True)
     payment_account = Column(String, nullable=True)
     payment_bank_name = Column(String, nullable=True)
     payment_bik = Column(String, nullable=True)
@@ -39,6 +42,7 @@ class User(Base):
     payment_cor_account = Column(String, nullable=True)
     payment_inn = Column(String, nullable=True)
     payment_kpp = Column(String, nullable=True)
+    personal_email = Column(String, nullable=False, unique=True, index=True)
     personal_phone_number = Column(String, nullable=True)
     phone_number = Column(String, nullable=True)
     postal = Column(String, nullable=True)
@@ -47,7 +51,6 @@ class User(Base):
     status = Column(String, default="active")
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     user_type = Column(String, default="individual") # "individual" or "legal"
-    username = Column(String, unique=True, index=True)
     # --- relationships ---
     documents = relationship('DocumentStorage', back_populates='user')
     files = relationship('FileStorage', back_populates='user')
@@ -117,17 +120,13 @@ class Order(Base):
     # --- columns (alphabetical) ---
     calculation_time = Column(Float, nullable=True)
     calculation_type = Column(String, nullable=True)
-    coating_thickness_microns = Column(Float, nullable=True)
     cover_id = Column(JSON, default=["1"])
     created_at = Column(DateTime, default=utcnow)
-    deadline = Column(DateTime, default=utcnow) # DEPRECATED
     detail_price = Column(Float, nullable=True)
     detail_price_one = Column(Float, nullable=True)
     detail_price_calculation = Column(Text, nullable=True) # JSON 
     detail_time = Column(Float, nullable=True)
     document_ids = Column(Text, nullable=True)
-    electroplating_family = Column(Text, nullable=True)
-    electroplating_process_id = Column(Text, nullable=True)
     file_id = Column(Integer, ForeignKey('files.id'))
     finish_id = Column(String, default="1")
     height = Column(Integer, nullable=True)
@@ -149,7 +148,6 @@ class Order(Base):
     ml_model = Column(String, nullable=True) # TODO
     order_code = Column(String, nullable=True)
     order_name = Column(String, nullable=True)
-    processing_depth_microns = Column(Float, nullable=True)
     quantity = Column(Integer, default=1)
     service_id = Column(String)
     special_instructions = Column(Text) # TODO
@@ -206,7 +204,6 @@ class Kit(Base):
     # --- columns (alphabetical) ---
     created_at = Column(DateTime, default=utcnow)
     delivery_price = Column(Float, nullable=True, default=0.0)
-    finished_at = Column(DateTime, nullable=True)
     kit_name = Column(String, nullable=True)
     kit_price = Column(Float, nullable=True, default=0.0)
     location = Column(Text, nullable=True)

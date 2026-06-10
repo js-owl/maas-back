@@ -45,19 +45,10 @@ class PreviewGenerator:
         unique_id = str(uuid.uuid4())[:8]
         return f"{file_stem}_{unique_id}_preview.png"
 
-    async def generate_preview(
-        self,
-        model_path: Path,
-        original_filename: str,
-        fallback_to_placeholder: bool = True,
-    ) -> Optional[Dict[str, Any]]:
+    async def generate_preview(self, model_path: Path, original_filename: str) -> Optional[Dict[str, Any]]:
         """
-        Generate preview image for given model_path and persist it into PREVIEW_DIR.
-
-        When fallback_to_placeholder=False, a remote rendering failure leaves the
-        preview as missing. This is useful for startup backfills: a temporary
-        calculator outage should not create a permanent placeholder for demo
-        files and prevent a later retry.
+        Generate preview image 
+        for given model_path and persist it into PREVIEW_DIR.
         """
         try:
             ext = Path(model_path).suffix.lower()
@@ -75,18 +66,6 @@ class PreviewGenerator:
 
             ok = await self._generate_via_calculator(model_path, original_filename, preview_path)
             if not ok:
-                if not fallback_to_placeholder:
-                    logger.warning(
-                        "Remote preview generation failed for %s; placeholder fallback is disabled",
-                        original_filename,
-                    )
-                    return {
-                        "preview_filename": None,
-                        "preview_path": None,
-                        "preview_generated": False,
-                        "preview_generation_error": "Remote preview generation failed",
-                    }
-
                 logger.warning(f"Remote preview generation failed for {original_filename}, using placeholder")
                 await self._generate_placeholder_preview(preview_path, original_filename)
 
@@ -151,7 +130,7 @@ class PreviewGenerator:
             png_bytes = base64.b64decode(images[0])
             with open(preview_path, "wb") as out:
                 out.write(png_bytes)
-            logger.info("png is saved: %s", preview_path)
+            logger.info("png is saved")
             return preview_path.exists() and preview_path.stat().st_size > 0
         except Exception as e:
             logger.warning(f"Failed to decode/save PNG from calculator: {e}")

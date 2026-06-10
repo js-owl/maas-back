@@ -19,6 +19,8 @@
 - `POST /login` - User login; returns access token and sets refresh cookie
 - `POST /refresh` - Cookie-based access token refresh with rotation
 - `POST /logout` - Clears refresh cookie and invalidates the refresh session when present
+- `POST /email/send-confirmation`, `POST /email/confirm` - Email verification (see [Email verification and password recovery](email-verification-and-password-recovery.md))
+- `POST /password/send-recovery`, `POST /password/reset` - Password recovery (same guide)
 - `GET /health`, `/health/detailed` - System health
 - `GET /` - Root endpoint with API info
 - `GET /files/demo` - Demo 3D models for anonymous calculations
@@ -66,14 +68,19 @@
 - **`POST /files`**: 3D models with preview generation, file analysis (STP/STEP)
 - **`POST /documents`**: PDFs, specs, manuals - simple storage, no processing
 
+## Email verification gate
+
+Non-admin users must confirm their email (`email_verified=true`) before login, refresh, or protected routes succeed. After `POST /register`, call `POST /email/send-confirmation` and complete `POST /email/confirm` with the token from the email link. Admins are exempt. Full API details: [Email verification and password recovery](email-verification-and-password-recovery.md).
+
 ## Authentication Flow
 
 1. **Registration**: `POST /register` with user data
-2. **Login**: `POST /login` with `username`, `password`, and optional `remember_me`
-3. **Login response**: JSON body returns a short-lived access token; `Set-Cookie` stores the refresh token as `HttpOnly`
-4. **API calls**: Include `Authorization: Bearer <access_token>` for protected endpoints
-5. **Refresh**: `POST /refresh` reads only the refresh cookie, verifies JWT + Redis session, rotates the refresh token, returns a new access token, and sets a new refresh cookie
-6. **Logout**: `POST /logout` deletes the Redis refresh session when identifiable and clears the refresh cookie; access tokens naturally expire shortly after logout
+2. **Email verification** (non-admin): send confirmation email, user confirms via link + `POST /email/confirm`
+3. **Login**: `POST /login` with `username`, `password`, and optional `remember_me`
+4. **Login response**: JSON body returns a short-lived access token; `Set-Cookie` stores the refresh token as `HttpOnly`
+5. **API calls**: Include `Authorization: Bearer <access_token>` for protected endpoints
+6. **Refresh**: `POST /refresh` reads only the refresh cookie, verifies JWT + Redis session, rotates the refresh token, returns a new access token, and sets a new refresh cookie
+7. **Logout**: `POST /logout` deletes the Redis refresh session when identifiable and clears the refresh cookie; access tokens naturally expire shortly after logout
 
 ## Access and Refresh Lifecycle
 

@@ -22,7 +22,7 @@ def company_title(user: User) -> str:
     return (
         getattr(user, "payment_company_name", None)
         or getattr(user, "company", None)
-        or getattr(user, "username", None)
+        or getattr(user, "full_name", None)
         or f"User {getattr(user, 'id', '')}"
     )
 
