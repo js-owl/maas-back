@@ -2,6 +2,7 @@
 from typing import Any
 
 from backend.bitrix24.dto.category import CategoryCreate, CategoryUpdate
+from backend.bitrix24.dto.activity import ActivityCreate
 from backend.bitrix24.dto.company import CompanyCreate, CompanyUpdate
 from backend.bitrix24.dto.contact import ContactCreate, ContactUpdate
 from backend.bitrix24.dto.deal import DealCreate, DealUpdate
@@ -19,6 +20,7 @@ from backend.bitrix24.dto.product_property_enum import (
 from backend.bitrix24.dto.product_row import ProductRowCreate, ProductRowUpdate
 from backend.bitrix24.dto.status import StatusCreate, StatusUpdate
 from backend.bitrix24.dto.userfield import UserfieldCreate, UserfieldUpdate
+from backend.bitrix24.services.activity import ActivityService
 from backend.bitrix24.services.category import CategoryService
 from backend.bitrix24.services.company import CompanyService
 from backend.bitrix24.services.contact import ContactService
@@ -36,6 +38,12 @@ ActionMap = dict[str, str]
 RoutingEntry = dict[str, Any]
 
 ENTITY_TYPE_ROUTING: dict[str, RoutingEntry] = {
+    "activity": {
+        "service": ActivityService,
+        "actions": {"create": "add"},
+        # The processor resolves OWNER_ID before validating ActivityCreate.
+        "dto": {"create": ActivityCreate},
+    },
     "deal": {
         "service": DealService,
         "actions": {"create": "add", "update": "update", "delete": "delete"},

@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from backend.auth.email_templates import render_auth_email_template
 from backend.bitrix24.async_queue.idempotency import (
     check_idempotency,
     store_idempotency_token,
@@ -14,7 +15,8 @@ from backend.bitrix24.async_queue.idempotency import (
 from backend.bitrix24.async_queue.message import QueueMessage, validate_message_fields
 from backend.bitrix24.async_queue.routing import ENTITY_TYPE_ROUTING
 from backend.bitrix24.client import BitrixClient
-from backend.bitrix24.constants import OwnerType
+from backend.bitrix24.constants import EntityTypeId, OwnerType
+from backend.bitrix24.dto.activity import ActivityCommunication, ActivityCreate
 from backend.bitrix24.dto.product_row import ProductRowCreate
 from backend.bitrix24.product_property_value_ids import extract_property_value_ids
 from backend.bitrix24.exceptions import BitrixAPIError
@@ -22,6 +24,16 @@ from backend.bitrix24.repositories.mapping_repository import delete_mappings_by_
 from backend.bitrix24.services.product import ProductService
 from backend.bitrix24.services.product_row import ProductRowService
 from backend.bitrix24.services.deal import DealService
+from backend.core.config import (
+    EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
+    EMAIL_VERIFICATION_BITRIX_MESSAGE_FROM,
+    EMAIL_VERIFICATION_BITRIX_RESPONSIBLE_ID,
+    EMAIL_VERIFICATION_BITRIX_SUBJECT,
+    PASSWORD_RECOVERY_TOKEN_TTL_SECONDS,
+    PASSWORD_RECOVERY_BITRIX_MESSAGE_FROM,
+    PASSWORD_RECOVERY_BITRIX_RESPONSIBLE_ID,
+    PASSWORD_RECOVERY_BITRIX_SUBJECT,
+)
 from backend.bitrix24.services.company_legal_profile import (
     sync_company_legal_profile,
 )
@@ -55,6 +67,10 @@ class ProcessingError(Exception):
         self.idempotency_claimed = idempotency_claimed
 
 
+class ContactMappingNotReadyError(TimeoutError):
+    """Raised when an activity must wait for contact sync to create a mapping."""
+
+
 def _extract_bitrix_id(result: Any) -> int | str | None:
     if result is None:
         return None
@@ -66,6 +82,72 @@ def _extract_bitrix_id(result: Any) -> int | str | None:
     if isinstance(result, (int, str)):
         return result
     return None
+
+
+def _require_payload_value(payload: dict[str, Any], key: str) -> Any:
+    value = payload.get(key)
+    if value is None or value == "":
+        raise ValueError(f"activity payload must include {key}")
+    return value
+
+
+async def _build_auth_email_activity(payload: dict[str, Any]) -> ActivityCreate:
+    kind = str(_require_payload_value(payload, "auth_email_kind"))
+    user_id = int(_require_payload_value(payload, "user_id"))
+    personal_email = str(_require_payload_value(payload, "personal_email"))
+    url = str(_require_payload_value(payload, "url"))
+
+    if kind == "confirmation":
+        subject = EMAIL_VERIFICATION_BITRIX_SUBJECT
+        responsible_id = EMAIL_VERIFICATION_BITRIX_RESPONSIBLE_ID
+        message_from = EMAIL_VERIFICATION_BITRIX_MESSAGE_FROM
+        ttl_seconds = EMAIL_VERIFICATION_TOKEN_TTL_SECONDS
+    elif kind == "recovery":
+        subject = PASSWORD_RECOVERY_BITRIX_SUBJECT
+        responsible_id = PASSWORD_RECOVERY_BITRIX_RESPONSIBLE_ID
+        message_from = PASSWORD_RECOVERY_BITRIX_MESSAGE_FROM
+        ttl_seconds = PASSWORD_RECOVERY_TOKEN_TTL_SECONDS
+    else:
+        raise ValueError(f"Unsupported auth_email_kind: {kind}")
+    html_body = render_auth_email_template(
+        kind,
+        action_url=url,
+        expires_at=datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds),
+    )
+
+    async with AsyncSessionLocal() as db:
+        contact_id = await get_bitrix_id(db, user_id, "contact")
+
+    if contact_id is None:
+        raise ContactMappingNotReadyError(
+            f"Bitrix contact mapping is not ready for user {user_id}"
+        )
+
+    tz = timezone(timedelta(hours=3))
+    start = datetime.now(tz)
+    end = start + timedelta(minutes=5)
+    return ActivityCreate(
+        SUBJECT=subject,
+        DESCRIPTION=html_body,
+        DESCRIPTION_TYPE="3",
+        COMPLETED="Y",
+        # PRIORITY="2",
+        DIRECTION="2",
+        OWNER_ID=int(contact_id),
+        OWNER_TYPE_ID=str(int(EntityTypeId.CONTACT)),
+        TYPE_ID="4",
+        COMMUNICATIONS=[
+            ActivityCommunication(
+                VALUE=personal_email,
+                ENTITY_ID=int(contact_id),
+                ENTITY_TYPE_ID=str(int(EntityTypeId.CONTACT))
+            )
+        ],
+        START_TIME=start.isoformat(timespec='seconds'),
+        END_TIME=end.isoformat(timespec='seconds'),
+        RESPONSIBLE_ID=responsible_id,
+        SETTINGS={"MESSAGE_FROM": message_from},
+    )
 
 
 async def _resolve_location_label(location_id: Any) -> str | None:
@@ -240,9 +322,12 @@ async def process_message(
                     except Exception as e:
                         logger.warning("Failed to map stage name '%s' to code for category %s: %s", stage_val, category_id, e)
 
-        dto_map = entry.get("dto", {})
-        dto_cls = dto_map.get(message.action)
-        fields = dto_cls.model_validate(payload) if dto_cls else None
+        if message.entity_type == "activity" and message.action == "create":
+            fields = await _build_auth_email_activity(payload)
+        else:
+            dto_map = entry.get("dto", {})
+            dto_cls = dto_map.get(message.action)
+            fields = dto_cls.model_validate(payload) if dto_cls else None
 
         if message.action == "create":
             if message.local_id is None:
@@ -315,37 +400,38 @@ async def process_message(
                         redis, message.entity_type, message.local_id, bitrix_id
                     )
 
-                # Store mapping in database
-                try:
-                    async with AsyncSessionLocal() as db:
-                        await upsert_mapping(
-                            db=db,
-                            maas_id=message.local_id,
-                            bitrix_id=int(bitrix_id) if isinstance(bitrix_id, str) else bitrix_id,
-                            entity_type=message.entity_type
-                        )
-                        if recreated_on_missing and message.entity_type == "company":
-                            await delete_mappings_by_entity(db, message.local_id, "company_requisite")
-                            await delete_mappings_by_entity(db, message.local_id, "company_bank_detail")
-                        if recreated_on_missing and message.entity_type == "contact":
-                            await delete_mappings_by_entity(db, message.local_id, "contact_requisite")
-                        logger.info(
-                            "Created mapping: %s MaaS ID %s <-> Bitrix ID %s",
+                if message.entity_type != "activity":
+                    # Store mapping in database
+                    try:
+                        async with AsyncSessionLocal() as db:
+                            await upsert_mapping(
+                                db=db,
+                                maas_id=message.local_id,
+                                bitrix_id=int(bitrix_id) if isinstance(bitrix_id, str) else bitrix_id,
+                                entity_type=message.entity_type
+                            )
+                            if recreated_on_missing and message.entity_type == "company":
+                                await delete_mappings_by_entity(db, message.local_id, "company_requisite")
+                                await delete_mappings_by_entity(db, message.local_id, "company_bank_detail")
+                            if recreated_on_missing and message.entity_type == "contact":
+                                await delete_mappings_by_entity(db, message.local_id, "contact_requisite")
+                            logger.info(
+                                "Created mapping: %s MaaS ID %s <-> Bitrix ID %s",
+                                message.entity_type,
+                                message.local_id,
+                                bitrix_id
+                            )
+                    except Exception as mapping_error:
+                        # Log error but don't fail the entire operation
+                        # since the Bitrix operation already succeeded
+                        logger.error(
+                            "Failed to create mapping for %s:%s -> %s: %s",
                             message.entity_type,
                             message.local_id,
-                            bitrix_id
+                            bitrix_id,
+                            mapping_error,
+                            exc_info=True
                         )
-                except Exception as mapping_error:
-                    # Log error but don't fail the entire operation
-                    # since the Bitrix operation already succeeded
-                    logger.error(
-                        "Failed to create mapping for %s:%s -> %s: %s",
-                        message.entity_type,
-                        message.local_id,
-                        bitrix_id,
-                        mapping_error,
-                        exc_info=True
-                    )
 
         if (
             message.entity_type == "company"

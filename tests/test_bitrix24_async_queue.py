@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import json
 
 import httpx
 import pytest
 
+from backend.auth.email_templates import render_auth_email_template
 from backend.bitrix24.async_queue.idempotency import (
     check_idempotency,
     generate_idempotency_key,
@@ -15,6 +17,7 @@ from backend.bitrix24.async_queue.retry import (
     classify_error,
 )
 from backend.bitrix24.async_queue.routing import ENTITY_TYPE_ROUTING
+from backend.bitrix24.auth_email_queue import activity_local_id_from_token, enqueue_auth_email
 from backend.bitrix24.exceptions import BitrixAPIError
 
 
@@ -88,6 +91,8 @@ async def test_check_idempotency_sets_token() -> None:
 
 def test_routing_table_contains_all_entities() -> None:
     expected = {
+        "activity",
+        "company",
         "deal",
         "contact",
         "lead",
@@ -101,9 +106,72 @@ def test_routing_table_contains_all_entities() -> None:
         "userfield",
     }
     assert set(ENTITY_TYPE_ROUTING.keys()) == expected
-    for entry in ENTITY_TYPE_ROUTING.values():
+    for entity_type, entry in ENTITY_TYPE_ROUTING.items():
         actions = entry["actions"]
-        assert set(actions.keys()) == {"create", "update", "delete"}
+        if entity_type == "activity":
+            assert set(actions.keys()) == {"create"}
+        elif entity_type == "company":
+            assert set(actions.keys()) == {"create", "update"}
+        else:
+            assert set(actions.keys()) == {"create", "update", "delete"}
+
+
+def test_auth_email_templates_render_common_footer_and_action_url() -> None:
+    expires_at = datetime(2026, 6, 18, 12, 30, tzinfo=timezone.utc)
+
+    confirmation = render_auth_email_template(
+        "confirmation",
+        action_url="https://example.com/confirm?token=abc&next=/profile",
+        expires_at=expires_at,
+    )
+    recovery = render_auth_email_template(
+        "recovery",
+        action_url="https://example.com/reset?token=def",
+        expires_at=expires_at,
+    )
+
+    assert "Подтвердить почту" in confirmation
+    assert "Сбросить пароль" in recovery
+    assert "https://example.com/confirm?token=abc&amp;next=/profile" in confirmation
+    assert "https://example.com/reset?token=def" in recovery
+    for html in (confirmation, recovery):
+        assert "Ссылка действует до" in html
+        assert "18.06.2026" in html
+        assert "Никому не пересылайте ссылку" in html
+        assert "{{" not in html
+        assert "}}" not in html
+
+
+@pytest.mark.asyncio
+async def test_enqueue_auth_email_uses_token_derived_local_id() -> None:
+    redis = FakeRedis()
+    await enqueue_auth_email(
+        redis,
+        kind="confirmation",
+        user_id=7,
+        personal_email="user@example.com",
+        token="first-token",
+        url="https://example.com/confirm?token=first-token",
+    )
+    await enqueue_auth_email(
+        redis,
+        kind="confirmation",
+        user_id=7,
+        personal_email="user@example.com",
+        token="second-token",
+        url="https://example.com/confirm?token=second-token",
+    )
+
+    first = json.loads(redis.calls[0][1])
+    second = json.loads(redis.calls[1][1])
+
+    assert first["entity_type"] == "activity"
+    assert first["action"] == "create"
+    assert first["local_id"] == activity_local_id_from_token("first-token")
+    assert second["local_id"] == activity_local_id_from_token("second-token")
+    assert first["local_id"] != second["local_id"]
+    assert first["payload"]["auth_email_kind"] == "confirmation"
+    assert first["payload"]["user_id"] == 7
 
 
 def test_retry_delay_calculation() -> None:

@@ -11,25 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend import models, schemas
-from backend.auth.email_verification import normalize_email, resolve_bitrix_contact_id
+from backend.auth.email_verification import normalize_email
 from backend.auth.service import get_password_hash, revoke_all_refresh_sessions
-from backend.bitrix24.client import BitrixClient
-from backend.bitrix24.dto.activity import ActivityCommunication, ActivityCreate
-from backend.bitrix24.services.activity import ActivityService
+from backend.bitrix24.auth_email_queue import enqueue_auth_email
 from backend.core.config import (
     BITRIX_ENABLED,
-    BITRIX24_ACCESS_TOKEN,
-    BITRIX24_TIMEOUT,
-    BITRIX24_WEBHOOK_URL,
-    BITRIX_VERIFY_TLS,
-    PASSWORD_RECOVERY_BITRIX_MESSAGE_FROM,
-    PASSWORD_RECOVERY_BITRIX_RESPONSIBLE_ID,
-    PASSWORD_RECOVERY_BITRIX_SUBJECT,
     PASSWORD_RECOVERY_ENABLED,
     PASSWORD_RECOVERY_RATE_LIMIT_PER_EMAIL,
     PASSWORD_RECOVERY_RATE_LIMIT_PER_IP,
     PASSWORD_RECOVERY_RATE_LIMIT_WINDOW_SECONDS,
-    PASSWORD_RECOVERY_REQUIRE_BITRIX_CONTACT,
     PASSWORD_RECOVERY_RESET_URL_TEMPLATE,
     PASSWORD_RECOVERY_SEND_COOLDOWN_SECONDS,
     PASSWORD_RECOVERY_TOKEN_TTL_SECONDS,
@@ -161,51 +151,6 @@ def build_reset_url(token: str) -> str:
     return PASSWORD_RECOVERY_RESET_URL_TEMPLATE.replace("{token}", token)
 
 
-def _bitrix_client() -> BitrixClient:
-    return BitrixClient(
-        base_url=BITRIX24_WEBHOOK_URL,
-        access_token=BITRIX24_ACCESS_TOKEN,
-        timeout=BITRIX24_TIMEOUT,
-        verify_tls=BITRIX_VERIFY_TLS,
-    )
-
-
-async def send_bitrix_recovery_email(
-    db: AsyncSession,
-    *,
-    user: models.User,
-    token: str,
-) -> bool:
-    """Send CRM email activity. Returns True on success."""
-    if not BITRIX_ENABLED:
-        logger.info("Bitrix disabled; skipping recovery email for user %s", user.id)
-        return False
-
-    contact_id = await resolve_bitrix_contact_id(db, user.id)
-    if contact_id is None:
-        logger.warning("No Bitrix contact mapping for user %s; cannot send recovery email", user.id)
-        return False
-
-    reset_url = build_reset_url(token)
-    fields = ActivityCreate(
-        SUBJECT=PASSWORD_RECOVERY_BITRIX_SUBJECT,
-        DESCRIPTION=reset_url,
-        DESCRIPTION_TYPE="2",
-        COMPLETED="Y",
-        DIRECTION="2",
-        OWNER_ID=contact_id,
-        OWNER_TYPE_ID="3",
-        TYPE_ID="4",
-        COMMUNICATIONS=[ActivityCommunication(VALUE=user.personal_email)],
-        RESPONSIBLE_ID=PASSWORD_RECOVERY_BITRIX_RESPONSIBLE_ID,
-        SETTINGS={"MESSAGE_FROM": PASSWORD_RECOVERY_BITRIX_MESSAGE_FROM},
-    )
-    client = _bitrix_client()
-    service = ActivityService(client)
-    await service.add(fields)
-    return True
-
-
 async def send_password_recovery_email(
     db: AsyncSession,
     redis: Redis,
@@ -228,25 +173,20 @@ async def send_password_recovery_email(
     if await _cooldown_active(redis, normalized):
         return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
 
-    contact_id = await resolve_bitrix_contact_id(db, user.id)
-    if contact_id is None and PASSWORD_RECOVERY_REQUIRE_BITRIX_CONTACT:
-        logger.warning(
-            "Password recovery send skipped for user %s: Bitrix contact mapping required but missing",
-            user.id,
-        )
-        return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
-
     token = await _issue_token(redis, user.id)
 
     if BITRIX_ENABLED:
         try:
-            sent = await send_bitrix_recovery_email(db, user=user, token=token)
-            if not sent:
-                if PASSWORD_RECOVERY_REQUIRE_BITRIX_CONTACT:
-                    await _delete_token_pair(redis, token, user.id)
-                    return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
+            await enqueue_auth_email(
+                redis,
+                kind="recovery",
+                user_id=user.id,
+                personal_email=user.personal_email,
+                token=token,
+                url=build_reset_url(token),
+            )
         except Exception:
-            logger.exception("Bitrix recovery email failed for user %s", user.id)
+            logger.exception("Failed to enqueue Bitrix recovery email for user %s", user.id)
             await _delete_token_pair(redis, token, user.id)
             return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
 

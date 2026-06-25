@@ -11,25 +11,14 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend import models, schemas
-from backend.bitrix24.client import BitrixClient
-from backend.bitrix24.dto.activity import ActivityCommunication, ActivityCreate
-from backend.bitrix24.repositories.mapping_repository import get_mapping_by_maas_id
-from backend.bitrix24.services.activity import ActivityService
+from backend.bitrix24.auth_email_queue import enqueue_auth_email
 from backend.core.config import (
     BITRIX_ENABLED,
-    BITRIX24_ACCESS_TOKEN,
-    BITRIX24_TIMEOUT,
-    BITRIX24_WEBHOOK_URL,
-    BITRIX_VERIFY_TLS,
-    EMAIL_VERIFICATION_BITRIX_MESSAGE_FROM,
-    EMAIL_VERIFICATION_BITRIX_RESPONSIBLE_ID,
-    EMAIL_VERIFICATION_BITRIX_SUBJECT,
     EMAIL_VERIFICATION_CONFIRM_URL_TEMPLATE,
     EMAIL_VERIFICATION_ENABLED,
     EMAIL_VERIFICATION_RATE_LIMIT_PER_EMAIL,
     EMAIL_VERIFICATION_RATE_LIMIT_PER_IP,
     EMAIL_VERIFICATION_RATE_LIMIT_WINDOW_SECONDS,
-    EMAIL_VERIFICATION_REQUIRE_BITRIX_CONTACT,
     EMAIL_VERIFICATION_SEND_COOLDOWN_SECONDS,
     EMAIL_VERIFICATION_TOKEN_TTL_SECONDS,
 )
@@ -166,60 +155,8 @@ async def _lookup_user_id(redis: Redis, token: str) -> Optional[int]:
         return None
 
 
-async def resolve_bitrix_contact_id(db: AsyncSession, user_id: int) -> Optional[int]:
-    mapping = await get_mapping_by_maas_id(db, user_id, "contact")
-    if mapping is None:
-        return None
-    return mapping.bitrix_id
-
-
 def build_confirmation_url(token: str) -> str:
     return EMAIL_VERIFICATION_CONFIRM_URL_TEMPLATE.replace("{token}", token)
-
-
-def _bitrix_client() -> BitrixClient:
-    return BitrixClient(
-        base_url=BITRIX24_WEBHOOK_URL,
-        access_token=BITRIX24_ACCESS_TOKEN,
-        timeout=BITRIX24_TIMEOUT,
-        verify_tls=BITRIX_VERIFY_TLS,
-    )
-
-
-async def send_bitrix_confirmation_email(
-    db: AsyncSession,
-    *,
-    user: models.User,
-    token: str,
-) -> bool:
-    """Send CRM email activity. Returns True on success."""
-    if not BITRIX_ENABLED:
-        logger.info("Bitrix disabled; skipping confirmation email for user %s", user.id)
-        return False
-
-    contact_id = await resolve_bitrix_contact_id(db, user.id)
-    if contact_id is None:
-        logger.warning("No Bitrix contact mapping for user %s; cannot send confirmation email", user.id)
-        return False
-
-    confirmation_url = build_confirmation_url(token)
-    fields = ActivityCreate(
-        SUBJECT=EMAIL_VERIFICATION_BITRIX_SUBJECT,
-        DESCRIPTION=confirmation_url,
-        DESCRIPTION_TYPE="2",
-        COMPLETED="Y",
-        DIRECTION="2",
-        OWNER_ID=contact_id,
-        OWNER_TYPE_ID="3",
-        TYPE_ID="4",
-        COMMUNICATIONS=[ActivityCommunication(VALUE=user.personal_email)],
-        RESPONSIBLE_ID=EMAIL_VERIFICATION_BITRIX_RESPONSIBLE_ID,
-        SETTINGS={"MESSAGE_FROM": EMAIL_VERIFICATION_BITRIX_MESSAGE_FROM},
-    )
-    client = _bitrix_client()
-    service = ActivityService(client)
-    await service.add(fields)
-    return True
 
 
 async def send_confirmation_email(
@@ -244,25 +181,20 @@ async def send_confirmation_email(
     if await _cooldown_active(redis, normalized):
         return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
 
-    contact_id = await resolve_bitrix_contact_id(db, user.id)
-    if contact_id is None and EMAIL_VERIFICATION_REQUIRE_BITRIX_CONTACT:
-        logger.warning(
-            "Email verification send skipped for user %s: Bitrix contact mapping required but missing",
-            user.id,
-        )
-        return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
-
     token = await _issue_token(redis, user.id)
 
     if BITRIX_ENABLED:
         try:
-            sent = await send_bitrix_confirmation_email(db, user=user, token=token)
-            if not sent:
-                if EMAIL_VERIFICATION_REQUIRE_BITRIX_CONTACT:
-                    await _delete_token_pair(redis, token, user.id)
-                    return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
+            await enqueue_auth_email(
+                redis,
+                kind="confirmation",
+                user_id=user.id,
+                personal_email=user.personal_email,
+                token=token,
+                url=build_confirmation_url(token),
+            )
         except Exception:
-            logger.exception("Bitrix confirmation email failed for user %s", user.id)
+            logger.exception("Failed to enqueue Bitrix confirmation email for user %s", user.id)
             await _delete_token_pair(redis, token, user.id)
             return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
 
