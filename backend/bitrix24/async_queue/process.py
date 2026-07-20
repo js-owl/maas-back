@@ -21,8 +21,11 @@ from backend.core.config import (
     BITRIX_REVERSE_SYNC_ENABLED,
     BITRIX_REVERSE_SYNC_INTERVAL_SECONDS,
     BITRIX_VERIFY_TLS,
+    MATERIALS_SYNC_ENABLED,
+    MATERIALS_SYNC_INTERVAL_SECONDS,
 )
 from backend.core.redis import create_redis_pool
+from backend.materials_price.sync import run_loop as materials_price_run_loop
 from backend.utils.logging import get_logger
 
 logger = get_logger(__name__)
@@ -60,6 +63,28 @@ def run_reverse_sync_worker() -> None:
         verify_tls=BITRIX_VERIFY_TLS,
     )
     asyncio.run(reverse_sync_run_loop(client, redis, interval_seconds=BITRIX_REVERSE_SYNC_INTERVAL_SECONDS))
+
+
+def run_materials_sync_worker() -> None:
+    """Entry point for materials price sync (Excel → Bitrix auto_price → Postgres/Redis)."""
+    if not BITRIX24_WEBHOOK_URL:
+        logger.error("BITRIX24_WEBHOOK_URL is not configured; materials sync cannot start")
+        return
+
+    redis = Redis(connection_pool=create_redis_pool())
+    client = BitrixClient(
+        base_url=BITRIX24_WEBHOOK_URL,
+        access_token=BITRIX24_ACCESS_TOKEN,
+        timeout=BITRIX24_TIMEOUT,
+        verify_tls=BITRIX_VERIFY_TLS,
+    )
+    asyncio.run(
+        materials_price_run_loop(
+            client,
+            redis,
+            interval_seconds=MATERIALS_SYNC_INTERVAL_SECONDS,
+        )
+    )
 
 
 def start_executor_process(app: FastAPI) -> None:
@@ -126,3 +151,36 @@ def stop_reverse_sync_process(app: FastAPI, timeout: int = 10) -> None:
         logger.exception("Failed to stop reverse sync process cleanly")
     finally:
         app.state.reverse_sync_process = None
+
+
+def start_materials_sync_process(app: FastAPI) -> None:
+    """Spawn materials price sync inside the backend process tree (not a separate deployable)."""
+    if not MATERIALS_SYNC_ENABLED:
+        logger.info("Materials price sync not started (MATERIALS_SYNC_ENABLED=false)")
+        return
+    if not BITRIX_ENABLED:
+        logger.info("Materials price sync not started (BITRIX_ENABLED=false)")
+        return
+
+    process = Process(target=run_materials_sync_worker, name="materials-price-sync")
+    process.start()
+    app.state.materials_sync_process = process
+    logger.info("Materials price sync process started (pid=%s)", process.pid)
+
+
+def stop_materials_sync_process(app: FastAPI, timeout: int = 10) -> None:
+    """Stop materials price sync process on application shutdown."""
+    process: Process | None = getattr(app.state, "materials_sync_process", None)
+    if process is None:
+        return
+
+    try:
+        os.kill(process.pid, signal.SIGTERM)
+        process.join(timeout=timeout)
+        if process.is_alive():
+            logger.warning("Materials sync process did not exit in time; terminating")
+            process.terminate()
+    except Exception:
+        logger.exception("Failed to stop materials sync process cleanly")
+    finally:
+        app.state.materials_sync_process = None

@@ -27,6 +27,10 @@ async def call_calculator_service(
     finish_id: str = "1",
     cover_id: List[str] = ["1"],
     is_need_special_equipment: Optional[bool] = None,
+    electroplating_family: Optional[str] = None, # add for electroplating_auto service
+    electroplating_process_id: Optional[str] = None, # add for electroplating_auto service
+    coating_thickness_microns: Optional[float] = None, # add for electroplating_auto service
+    processing_depth_microns: Optional[float] = None, # add for electroplating_auto service
     k_otk: str = "1.0",
     k_cert: List[str] = None,
     timeout: float = 15.0,
@@ -35,7 +39,8 @@ async def call_calculator_service(
     file_name: Optional[str] = None,
     file_type: Optional[str] = None,
     location: Optional[str] = None,
-    document_ids: Optional[str] = None
+    document_ids: Optional[str] = None,
+    material_snapshot: Optional[Dict[str, Any]] = None,
 ) -> dict:
     """Universal function to call the external calculator service using unified /calculate-price endpoint"""
     
@@ -63,6 +68,9 @@ async def call_calculator_service(
             "k_cert": k_cert,
             "location": location
         }
+
+        if material_snapshot:
+            post_data["material_snapshot"] = material_snapshot
         
         # Add dimensions only if provided (not None)
         if length is not None or width is not None or (height is not None):
@@ -88,12 +96,31 @@ async def call_calculator_service(
         # Add if provided
         if is_need_special_equipment:
             post_data.update({
-                "is_need_special_equipment": is_need_special_equipment
+                "is_need_special_equipment": int(is_need_special_equipment)
+            })
+        
+        # add for electroplating_auto service
+        if electroplating_family:
+            post_data.update({
+                "electroplating_family": electroplating_family
+            })
+        if electroplating_process_id:
+            post_data.update({
+                "electroplating_process_id": electroplating_process_id
+            })
+        if coating_thickness_microns:
+            post_data.update({
+                "coating_thickness_microns": coating_thickness_microns
+            })
+        if processing_depth_microns:
+            post_data.update({
+                "processing_depth_microns": processing_depth_microns
             })
 
         # Log outgoing request payload to calculator
-        #logger.info(f"=======================Calculator request payload: {post_data}")
-        
+        # logger.info(f"=======================Calculator request payload: {post_data}")
+        # filtered_request = {k: v for k, v in post_data.items() if k != "file_data"}
+        # logger.info(f"============================= Request: поля: {list(post_data.keys())}, Request data without file_data {filtered_request}")
         # Prepare headers for calculator service call
         headers = {"Content-Type": "application/json"}
         
@@ -175,43 +202,3 @@ async def call_calculator_service(
         # Other errors become 500
         logger.error(f"Unexpected error during calculator service call: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
-
-# DEPRECATED
-# async def analyze_stp_file(file_path: str, filename: str) -> Dict[str, Any]:
-#     """Analyze STP file to extract geometric features"""
-#     try:
-#         analysis_url = f"{CALCULATOR_BASE_URL}/analyze_base_stp_file/"
-        
-#         async with httpx.AsyncClient(timeout=30.0) as client:
-#             # Upload file for analysis
-#             with open(file_path, "rb") as f:
-#                 files = {"file": (filename, f, "application/octet-stream")}
-#                 analysis_response = await client.post(analysis_url, files=files)
-            
-#             if analysis_response.status_code != 200:
-#                 logger.warning(f"STP analysis failed: {analysis_response.status_code} - {analysis_response.text}")
-#                 return {}
-            
-#             analysis_data = analysis_response.json()
-#             logger.info(f"STP analysis successful: {len(analysis_data)} geometric features")
-            
-#             # Ensure analysis_data is a dict (not a list)
-#             if isinstance(analysis_data, list):
-#                 analysis_data = analysis_data[0] if analysis_data else {}
-            
-#             # Helper function to convert dict_values to lists for JSON serialization
-#             def convert_dict_values(obj):
-#                 if isinstance(obj, dict):
-#                     return {k: convert_dict_values(v) for k, v in obj.items()}
-#                 elif isinstance(obj, (list, tuple)):
-#                     return [convert_dict_values(item) for item in obj]
-#                 else:
-#                     if type(obj).__name__ == 'dict_values':
-#                         return list(obj)
-#                     return obj
-            
-#             return convert_dict_values(analysis_data)
-            
-#     except Exception as e:
-#         logger.warning(f"File analysis failed: {e}")
-#         return {}

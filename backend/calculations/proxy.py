@@ -151,7 +151,19 @@ async def get_other_services(request: Request = None) -> List[Dict[str, Any]]:
 
 
 async def get_materials(process: str = None, request: Request = None) -> Dict[str, List[Dict[str, Any]]]:
-    """Get available materials from calculator service"""
+    """Get available materials from Redis catalog when synced, else calculator service."""
+    from backend.core.config import MATERIALS_SYNC_SERVE_CATALOG
+    from backend.materials_price.catalog import catalog_to_materials_list, load_catalog_from_redis
+
+    if MATERIALS_SYNC_SERVE_CATALOG and request is not None:
+        redis = getattr(request.app.state, "redis", None)
+        catalog = await load_catalog_from_redis(redis)
+        if catalog:
+            # Prefer catalog only when it has priced materials beyond the placeholder.
+            priced = {k: v for k, v in catalog.items() if k != "other"}
+            if priced:
+                return {"materials": catalog_to_materials_list(catalog, process)}
+
     endpoint = "materials"
     if process:
         endpoint += f"?process={process}"
@@ -186,6 +198,18 @@ async def get_operations_available(service_id: str, request: Request = None) -> 
     to view on pages from calculator service
     """
     response = await proxy_get_request("operations_available", request=request, json_data={"service_id": service_id})
+    # 7000 server v3.1.0 returns {"values": [...]}
+    if isinstance(response, dict) and "values" in response:
+        return {"values": response["values"]}
+    return response
+
+
+async def get_electroplating_material_families(request: Request, electroplating_process_id: str) -> Dict[str, List[Dict[str, Any]]]:
+    """Get available materials from calculator service"""
+    endpoint = "electroplating_material_families"
+    if electroplating_process_id:
+        endpoint += f"?electroplating_process_id={electroplating_process_id}"
+    response = await proxy_get_request(endpoint, request=request)
     # 7000 server v3.1.0 returns {"values": [...]}
     if isinstance(response, dict) and "values" in response:
         return {"values": response["values"]}

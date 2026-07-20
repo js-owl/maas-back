@@ -195,7 +195,7 @@ async def register_user(
         personal_email=personal_email,
         hashed_password=hashed_password,
         is_admin=False,
-        user_type="individual",
+        user_type="legal",
         status="active",
         email=None,
         full_name=user.full_name,

@@ -210,7 +210,7 @@ python scripts/run_all_tests.py --suite auth
 # Build and start all services
 docker network create maas-shared
 
-docker-compose -f docker-compose.localdocker.yml  up -d
+docker compose -f docker-compose.local.yml  up -d
 
 # View logs
 docker-compose logs -f

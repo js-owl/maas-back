@@ -120,13 +120,17 @@ class Order(Base):
     # --- columns (alphabetical) ---
     calculation_time = Column(Float, nullable=True)
     calculation_type = Column(String, nullable=True)
+    coating_thickness_microns = Column(Float, nullable=True)
     cover_id = Column(JSON, default=["1"])
     created_at = Column(DateTime, default=utcnow)
+    deadline = Column(DateTime, default=utcnow) # DEPRECATED
     detail_price = Column(Float, nullable=True)
     detail_price_one = Column(Float, nullable=True)
     detail_price_calculation = Column(Text, nullable=True) # JSON 
     detail_time = Column(Float, nullable=True)
     document_ids = Column(Text, nullable=True)
+    electroplating_family = Column(Text, nullable=True)
+    electroplating_process_id = Column(Text, nullable=True)
     file_id = Column(Integer, ForeignKey('files.id'))
     finish_id = Column(String, default="1")
     height = Column(Integer, nullable=True)
@@ -148,6 +152,7 @@ class Order(Base):
     ml_model = Column(String, nullable=True) # TODO
     order_code = Column(String, nullable=True)
     order_name = Column(String, nullable=True)
+    processing_depth_microns = Column(Float, nullable=True)
     quantity = Column(Integer, default=1)
     service_id = Column(String)
     special_instructions = Column(Text) # TODO
@@ -204,6 +209,7 @@ class Kit(Base):
     # --- columns (alphabetical) ---
     created_at = Column(DateTime, default=utcnow)
     delivery_price = Column(Float, nullable=True, default=0.0)
+    finished_at = Column(DateTime, nullable=True)
     kit_name = Column(String, nullable=True)
     kit_price = Column(Float, nullable=True, default=0.0)
     location = Column(Text, nullable=True)
@@ -363,3 +369,45 @@ class BitrixProductPropertyEnum(Base):
     xml_id = Column(String, nullable=True)
     # --- relationships ---
     property = relationship('BitrixProductProperty', back_populates='enums')
+
+
+# --- Materials catalog (synced from Bitrix CRM + Excel price lists) ---
+
+class Material(Base):
+    """MAAS copy of Bitrix materials catalog used for pricing."""
+    __tablename__ = 'materials'
+    id = Column(String, primary_key=True, index=True)
+    # --- columns (alphabetical) ---
+    applicable_processes = Column(JSON, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    density = Column(Float, nullable=True)
+    electroplating_family = Column(String, nullable=True)
+    family = Column(String, nullable=True)
+    label = Column(String, nullable=False)
+    material_group = Column(String, nullable=True)
+    material_name = Column(String, nullable=True)
+    material_name_group = Column(String, nullable=True)
+    material_name_main = Column(String, nullable=True)
+    minimum_order_quantity = Column(Float, nullable=True)
+    payload = Column(JSON, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    # --- relationships ---
+    forms = relationship('MaterialFormPrice', back_populates='material', cascade='all, delete-orphan')
+
+
+class MaterialFormPrice(Base):
+    """Per-form unit prices for a material."""
+    __tablename__ = 'material_form_prices'
+    id = Column(Integer, primary_key=True, index=True)
+    # --- columns (alphabetical) ---
+    applicable_processes = Column(JSON, nullable=True)
+    auto_price = Column(Float, nullable=True)
+    created_at = Column(DateTime, default=utcnow)
+    form = Column(String, nullable=False, index=True)
+    material_id = Column(String, ForeignKey('materials.id', ondelete='CASCADE'), nullable=False, index=True)
+    one_layer_thickness = Column(Float, nullable=True)
+    price = Column(Float, nullable=False, default=0.0)
+    price_units = Column(JSON, nullable=True)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
+    # --- relationships ---
+    material = relationship('Material', back_populates='forms')

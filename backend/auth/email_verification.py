@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -11,9 +12,10 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend import models, schemas
-from backend.bitrix24.auth_email_queue import enqueue_auth_email
+from backend.auth.email_templates import render_auth_email_template
+from backend.auth.smtp_sender import send_auth_email
 from backend.core.config import (
-    BITRIX_ENABLED,
+    EMAIL_VERIFICATION_BITRIX_SUBJECT,
     EMAIL_VERIFICATION_CONFIRM_URL_TEMPLATE,
     EMAIL_VERIFICATION_ENABLED,
     EMAIL_VERIFICATION_RATE_LIMIT_PER_EMAIL,
@@ -183,20 +185,21 @@ async def send_confirmation_email(
 
     token = await _issue_token(redis, user.id)
 
-    if BITRIX_ENABLED:
-        try:
-            await enqueue_auth_email(
-                redis,
-                kind="confirmation",
-                user_id=user.id,
-                personal_email=user.personal_email,
-                token=token,
-                url=build_confirmation_url(token),
-            )
-        except Exception:
-            logger.exception("Failed to enqueue Bitrix confirmation email for user %s", user.id)
-            await _delete_token_pair(redis, token, user.id)
-            return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
+    try:
+        html_body = render_auth_email_template(
+            "confirmation",
+            action_url=build_confirmation_url(token),
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=EMAIL_VERIFICATION_TOKEN_TTL_SECONDS),
+        )
+        await send_auth_email(
+            to=user.personal_email,
+            subject=EMAIL_VERIFICATION_BITRIX_SUBJECT,
+            html_body=html_body,
+        )
+    except Exception:
+        logger.exception("Failed to send confirmation email for user %s", user.id)
+        await _delete_token_pair(redis, token, user.id)
+        return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)
 
     await _set_cooldown(redis, normalized)
     return schemas.EmailSendConfirmationResponse(message=SEND_SUCCESS_MESSAGE)

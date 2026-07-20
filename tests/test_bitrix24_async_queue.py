@@ -135,6 +135,7 @@ def test_auth_email_templates_render_common_footer_and_action_url() -> None:
     assert "https://example.com/confirm?token=abc&amp;next=/profile" in confirmation
     assert "https://example.com/reset?token=def" in recovery
     for html in (confirmation, recovery):
+        assert "Если кнопка не работает, скопируйте ссылку" in html
         assert "Ссылка действует до" in html
         assert "18.06.2026" in html
         assert "Никому не пересылайте ссылку" in html

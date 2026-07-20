@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import secrets
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import HTTPException, status
@@ -11,11 +12,12 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend import models, schemas
+from backend.auth.email_templates import render_auth_email_template
 from backend.auth.email_verification import normalize_email
 from backend.auth.service import get_password_hash, revoke_all_refresh_sessions
-from backend.bitrix24.auth_email_queue import enqueue_auth_email
+from backend.auth.smtp_sender import send_auth_email
 from backend.core.config import (
-    BITRIX_ENABLED,
+    PASSWORD_RECOVERY_BITRIX_SUBJECT,
     PASSWORD_RECOVERY_ENABLED,
     PASSWORD_RECOVERY_RATE_LIMIT_PER_EMAIL,
     PASSWORD_RECOVERY_RATE_LIMIT_PER_IP,
@@ -175,20 +177,21 @@ async def send_password_recovery_email(
 
     token = await _issue_token(redis, user.id)
 
-    if BITRIX_ENABLED:
-        try:
-            await enqueue_auth_email(
-                redis,
-                kind="recovery",
-                user_id=user.id,
-                personal_email=user.personal_email,
-                token=token,
-                url=build_reset_url(token),
-            )
-        except Exception:
-            logger.exception("Failed to enqueue Bitrix recovery email for user %s", user.id)
-            await _delete_token_pair(redis, token, user.id)
-            return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
+    try:
+        html_body = render_auth_email_template(
+            "recovery",
+            action_url=build_reset_url(token),
+            expires_at=datetime.now(timezone.utc) + timedelta(seconds=PASSWORD_RECOVERY_TOKEN_TTL_SECONDS),
+        )
+        await send_auth_email(
+            to=user.personal_email,
+            subject=PASSWORD_RECOVERY_BITRIX_SUBJECT,
+            html_body=html_body,
+        )
+    except Exception:
+        logger.exception("Failed to send recovery email for user %s", user.id)
+        await _delete_token_pair(redis, token, user.id)
+        return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)
 
     await _set_cooldown(redis, normalized)
     return schemas.PasswordSendRecoveryResponse(message=SEND_SUCCESS_MESSAGE)

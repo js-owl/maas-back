@@ -49,6 +49,22 @@ BITRIX_PRODUCT_IBLOCK_ID = int(os.getenv("BITRIX_PRODUCT_IBLOCK_ID", "14"))
 # Reverse sync (Bitrix24 → MaaS): enable and run interval in seconds.
 BITRIX_REVERSE_SYNC_ENABLED = os.getenv("BITRIX_REVERSE_SYNC_ENABLED", "true").lower() == "true"
 BITRIX_REVERSE_SYNC_INTERVAL_SECONDS = int(os.getenv("BITRIX_REVERSE_SYNC_INTERVAL_SECONDS", "300"))
+# Materials price sync (Excel on Bitrix disk → CRM auto_price → Postgres/Redis catalog)
+MATERIALS_SYNC_ENABLED = os.getenv("MATERIALS_SYNC_ENABLED", "false").lower() == "true"
+MATERIALS_SYNC_INTERVAL_SECONDS = int(os.getenv("MATERIALS_SYNC_INTERVAL_SECONDS", "60"))
+MATERIALS_SYNC_SERVE_CATALOG = os.getenv("MATERIALS_SYNC_SERVE_CATALOG", "true").lower() == "true"
+MATERIALS_CRM_NAME = os.getenv("MATERIALS_CRM_NAME", "Список материалов")
+MATERIALS_PRICE_CRM_NAME = os.getenv("MATERIALS_PRICE_CRM_NAME", "Цены на материалы")
+MATERIALS_DISK_PATH = os.getenv("MATERIALS_DISK_PATH", "Общий диск/materials_price")
+
+# SMTP delivery for auth emails (email verification + password recovery)
+SMTP_HOST = os.getenv("SMTP_HOST", "localhost")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USER = os.getenv("SMTP_USER")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM = os.getenv("SMTP_FROM", "noreply@example.com")
+# Set true to enforce TLS certificate verification; false to accept self-signed / LAN certs
+SMTP_TLS_VERIFY = os.getenv("SMTP_TLS_VERIFY", "false").lower() == "true"
 
 # Email verification (registration)
 EMAIL_VERIFICATION_ENABLED = os.getenv("EMAIL_VERIFICATION_ENABLED", "true").lower() == "true"
@@ -142,3 +158,6 @@ MYCOMPANY_REQUISITES = {
     "BITRIX_MYCOMPANY_ADDRESS_POSTAL": "101000",
     "BITRIX_MYCOMPANY_ADDRESS_REGION": "Россия",
 }
+
+# Demo file IDs are intentionally stable: frontend may request them without auth.
+DEMO_FILE_IDS = (1, 2, 4)

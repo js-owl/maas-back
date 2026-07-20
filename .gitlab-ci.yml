@@ -107,6 +107,7 @@ build:production:
     - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/redis:8.2.3 || true
     - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/postgres:18 || true
     - docker rmi ${NEXUS_PUSH_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
+    - docker image prune -f || true
   only:
     - /^v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -192,6 +193,7 @@ build:development:
     - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/redis:8.2.3 || true
     - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/postgres:18 || true
     - docker rmi ${NEXUS_BUILD_REGISTRY}/maas-hosted/dpage/pgadmin4:9 || true
+    - docker image prune -f || true
   only:
     - /^dev-v[0-9]+\.[0-9]+\.[0-9]+$/
   tags:
@@ -212,7 +214,9 @@ deploy:production:
     - chmod 644 ~/.ssh/known_hosts
   script:
     - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "mkdir -p ${REMOTE_PROJECT_PATH}/config/pgadmin"
+    - ssh -p $SSH_PORT $SSH_USER@$SSH_HOST "mkdir -p $REMOTE_PROJECT_PATH/scripts/ci"
     - scp -P $SSH_PORT docker-compose.prod.yml $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/
+    - scp -P $SSH_PORT scripts/ci/deploy-cleanup.sh $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/scripts/ci/deploy-cleanup.sh
     - scp -P $SSH_PORT .env.production $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/.env
     - scp -P $SSH_PORT config/pgadmin/servers.json $SSH_USER@$SSH_HOST:$REMOTE_PROJECT_PATH/config/pgadmin/servers.json
     # Deploy to remote server
@@ -350,6 +354,10 @@ deploy:production:
         echo "Image: ${NEXUS_PUSH_IMAGE}:${IMAGE_TAG}" >> deployment.log
         echo "Git tag: ${IMAGE_TAG}" >> deployment.log
         echo "Git commit: ${CI_COMMIT_SHA}" >> deployment.log
+
+        mkdir -p scripts/ci
+        . scripts/ci/deploy-cleanup.sh
+        cleanup_app_images "${PROD_PUSH_IMAGE}" "${CI_COMMIT_TAG}"
       EOF
   only:
     - /^v[0-9]+\.[0-9]+\.[0-9]+$/
@@ -372,7 +380,9 @@ deploy:development:
     - ssh-keyscan -p $DEV_SSH_PORT $DEV_SSH_HOST >> ~/.ssh/known_hosts
     - chmod 644 ~/.ssh/known_hosts
   script:
+    - ssh -p $DEV_SSH_PORT $DEV_SSH_USER@$DEV_SSH_HOST "mkdir -p $DEV_REMOTE_PROJECT_PATH/scripts/ci"
     - scp -P $DEV_SSH_PORT docker-compose.dev.yml $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/
+    - scp -P $DEV_SSH_PORT scripts/ci/deploy-cleanup.sh $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/scripts/ci/deploy-cleanup.sh
     - scp -P $DEV_SSH_PORT .env.development $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/.env
     - scp -P $DEV_SSH_PORT -r config $DEV_SSH_USER@$DEV_SSH_HOST:$DEV_REMOTE_PROJECT_PATH/
     # Deploy to remote development server
@@ -502,7 +512,10 @@ deploy:development:
         echo "Image: ${NEXUS_PUSH_IMAGE}:dev-${IMAGE_TAG}" >> deployment.log
         echo "Git tag: ${IMAGE_TAG}" >> deployment.log
         echo "Git commit: ${CI_COMMIT_SHA}" >> deployment.log
-        echo ADMIN_LOCATION_OVERRIDES_JSON
+
+        mkdir -p scripts/ci
+        . scripts/ci/deploy-cleanup.sh
+        cleanup_app_images "${DEV_BUILD_IMAGE}" "${CI_COMMIT_TAG}"
       EOF
   only:
     - /^dev-v[0-9]+\.[0-9]+\.[0-9]+$/

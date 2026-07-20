@@ -45,6 +45,11 @@ class BitrixClient:
         from params. On success returns the 'result' value; on error raises
         BitrixAPIError(code, description).
         """
+        data = await self.call_full(method, params)
+        return data.get("result")
+
+    async def call_full(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Like call(), but returns the full Bitrix JSON body (result, next, total, …)."""
         params = params or {}
         payload = _strip_none(params)
         if self.access_token:
@@ -52,7 +57,6 @@ class BitrixClient:
 
         url = f"{self.base_url}{method}"
         if logger.isEnabledFor(logging.DEBUG):
-            # Redact auth for debug log
             log_payload = {k: ("***" if k == "auth" else v) for k, v in payload.items()}
             logger.debug("Bitrix24 request %s %s", method, log_payload)
 
@@ -89,4 +93,4 @@ class BitrixClient:
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("Bitrix24 response %s result keys: %s", method, type(data.get("result")))
 
-        return data.get("result")
+        return data

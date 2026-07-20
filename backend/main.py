@@ -25,8 +25,10 @@ from backend.core.config import (
 from backend.core.redis import init_redis, close_redis
 from backend.bitrix24.async_queue.process import (
     start_executor_process,
+    start_materials_sync_process,
     start_reverse_sync_process,
     stop_executor_process,
+    stop_materials_sync_process,
     stop_reverse_sync_process,
 )
 from backend.bitrix24.client import BitrixClient
@@ -50,7 +52,7 @@ from fastapi.exceptions import RequestValidationError
 from backend.database import (
     seed_admin, ensure_schema, 
     _env_json_dict, apply_admin_location_overrides,
-    ensure_demo_files,
+    ensure_demo_files, ensure_demo_file_previews,
     AsyncSessionLocal
 )
 from sqlalchemy import select, func
@@ -305,6 +307,11 @@ async def debug_request(request: Request):
     return response_data
 
 
+from backend.core.metrics import setup_prometheus
+
+setup_prometheus(app)
+
+
 async def auto_migrate_invoices_if_needed():
     """Automatically migrate invoices from documents table if needed"""
     try:
@@ -439,9 +446,14 @@ async def startup_event():
     
     # Ensure all tables and columns exist (PostgreSQL-compatible, idempotent)
     await ensure_schema()
+
+    # Seed admin before demo files: demo records need a valid uploader FK.
+    await seed_admin()
+
     overrides = _env_json_dict("ADMIN_LOCATION_OVERRIDES_JSON")
     await apply_admin_location_overrides(overrides)
     await ensure_demo_files()
+    await ensure_demo_file_previews()
 
     # Seed constant-entity tables with initial data from attribute_data_mapping (idempotent; runs when tables are empty)
     try:
@@ -474,9 +486,6 @@ async def startup_event():
 
     # Automatically migrate invoices from documents table if needed
     await auto_migrate_invoices_if_needed()
-    
-    # Seed admin user
-    await seed_admin()
 
     # Initialize Redis connection pool
     await init_redis(app)
@@ -495,12 +504,16 @@ async def startup_event():
     # Start Bitrix24 reverse sync process (Bitrix24 → MaaS) when enabled
     start_reverse_sync_process(app)
 
+    # Materials price sync (Excel → Bitrix auto_price → Postgres/Redis); same process tree
+    start_materials_sync_process(app)
+
     logger.info("Application startup complete")
 
 
 @app.on_event("shutdown")
 async def shutdown_event():
     """Gracefully shutdown application resources."""
+    stop_materials_sync_process(app)
     stop_reverse_sync_process(app)
     stop_executor_process(app)
     await close_redis(app)
